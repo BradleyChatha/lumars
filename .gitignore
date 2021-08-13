@@ -1,0 +1,17 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/lumars
+lumars.so
+lumars.dylib
+lumars.dll
+lumars.a
+lumars.lib
+lumars-test-*
+*.exe
+*.o
+*.obj
+*.lst
+a.out
+liblumars.a

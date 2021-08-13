@@ -1,0 +1,647 @@
+module lumars.state;
+
+import bindbc.lua, std, taggedalgebraic, lumars;
+import taggedalgebraic : visit;
+
+struct LuaNil {}
+
+union LuaValueUnion
+{
+    LuaNil nil;
+    lua_Number number;
+    const(char)[] textWeak;
+    string text;
+    bool boolean;
+    LuaTableWeak tableWeak;
+    LuaTable table;
+    LuaFuncWeak funcWeak;
+    LuaFunc func;
+}
+
+enum LuaStatus
+{
+    ok = 0,
+    yield = LUA_YIELD,
+    errRun = LUA_ERRRUN,
+    errSyntax = LUA_ERRSYNTAX,
+    errMem = LUA_ERRMEM,
+    errErr = LUA_ERRERR,
+}
+
+alias LuaValue = TaggedUnion!LuaValueUnion;
+alias LuaNumber = lua_Number;
+alias LuaCFunc = lua_CFunction;
+
+struct LuaState
+{
+    @disable this(this){}
+
+    private
+    {
+        lua_State* _handle;
+        bool _isWrapper;
+    }
+
+    @trusted @nogc
+    this(lua_State* wrapAround) nothrow
+    {
+        if(wrapAround)
+        {
+            this._handle = wrapAround;
+            this._isWrapper = true;
+        }
+        else
+        {
+            this._handle = luaL_newstate();
+            luaL_openlibs(this.handle);
+        }
+    }
+
+    @trusted @nogc
+    ~this() nothrow
+    {
+        if(this._handle && !this._isWrapper)
+            lua_close(this._handle);
+    }
+    
+    @nogc
+    lua_CFunction atPanic(lua_CFunction func) nothrow
+    {
+        return lua_atpanic(this.handle, func);
+    }
+
+    @nogc
+    void call(int nargs, int nresults) nothrow
+    {
+        lua_call(this.handle, nargs, nresults);
+    }
+
+    @nogc
+    bool checkStack(int amount) nothrow
+    {
+        return lua_checkstack(this.handle, amount) != 0;
+    }
+
+    @nogc
+    void concat(int nargs) nothrow
+    {
+        lua_concat(this.handle, nargs);
+    }
+
+    @nogc
+    bool equal(int index1, int index2) nothrow
+    {
+        return lua_equal(this.handle, index1, index2) != 0;
+    }
+
+    @nogc
+    void error() nothrow
+    {
+        lua_error(this.handle);
+    }
+
+    void error(const char[] msg) nothrow
+    {
+        luaL_error(this.handle, "%s", msg.toStringz);
+    }
+
+    void pushGlobal(const char[] field) nothrow
+    {
+        lua_getglobal(this.handle, field.toStringz);
+    }
+
+    LuaTableWeak pushMetatable(int ofIndex)
+    {
+        lua_getmetatable(this.handle, ofIndex);
+        return LuaTableWeak(&this, -1);
+    }
+
+    LuaTable getMetatable(int ofIndex)
+    {
+        lua_getmetatable(this.handle, ofIndex);
+        return LuaTable.makeRef(&this);
+    }
+
+    @nogc
+    bool lessThan(int index1, int index2) nothrow
+    {
+        return lua_lessthan(this.handle, index1, index2) != 0;
+    }
+    
+    @nogc
+    bool rawEqual(int index1, int index2) nothrow
+    {
+        return lua_rawequal(this.handle, index1, index2) != 0;
+    }
+
+    @nogc
+    void pushTable(int tableIndex) nothrow
+    {
+        return lua_gettable(this.handle, tableIndex);
+    }
+
+    @nogc
+    void insert(int index) nothrow
+    {
+        return lua_insert(this.handle, index);
+    }
+
+    @nogc
+    size_t len(int index) nothrow
+    {
+        return lua_objlen(this.handle, index);
+    }
+
+    @nogc
+    LuaStatus pcall(int nargs, int nresults, int errFuncIndex) nothrow
+    {
+        return cast(LuaStatus)lua_pcall(this.handle, nargs, nresults, errFuncIndex);
+    }
+
+    @nogc
+    void copy(int index) nothrow
+    {
+        lua_pushvalue(this.handle, index);
+    }
+
+    @nogc
+    void rawGet(int tableIndex) nothrow
+    {
+        lua_rawget(this.handle, tableIndex);
+    }
+
+    @nogc
+    void rawGet(int tableIndex, int indexIntoTable) nothrow
+    {
+        lua_rawgeti(this.handle, tableIndex, indexIntoTable);
+    }
+
+    @nogc
+    void rawSet(int tableIndex) nothrow
+    {
+        lua_rawset(this.handle, tableIndex);
+    }
+
+    @nogc
+    void rawSet(int tableIndex, int indexIntoTable) nothrow
+    {
+        lua_rawseti(this.handle, tableIndex, indexIntoTable);
+    }
+
+    void getGlobal(const char[] name)
+    {
+        lua_getglobal(this.handle, name.toStringz);
+    }
+
+    void setGlobal(const char[] name)
+    {
+        lua_setglobal(this.handle, name.toStringz);
+    }
+
+    void register(const char[] name, LuaCFunc func) nothrow
+    {
+        lua_register(this.handle, name.toStringz, func);
+    }
+
+    void register(alias Func)(const char[] name)
+    {
+        this.register(name, &luaCWrapperSmart!Func);
+    }
+
+    void register(Args...)(const char[] libname)
+    if(Args.length % 2 == 0)
+    {
+        luaL_Reg[(Args.length / 2) + 1] reg;
+
+        static foreach(i; 0..Args.length/2)
+            reg[i] = luaL_Reg(Args[i*2].ptr, &luaCWrapperSmart!(Args[i*2+1]));
+
+        luaL_register(this.handle, libname.toStringz, reg.ptr);
+    }
+
+    @nogc
+    void remove(int index) nothrow
+    {
+        lua_remove(this.handle, index);
+    }
+
+    @nogc
+    void replace(int index) nothrow
+    {
+        lua_replace(this.handle, index);
+    }
+
+    @nogc
+    void setMetatable(int ofIndex) nothrow
+    {
+        lua_setmetatable(this.handle, ofIndex);
+    }
+
+    void checkArg(bool condition, int argNum, const(char)[] extraMsg = null) nothrow
+    {
+        luaL_argcheck(this.handle, condition ? 1 : 0, argNum, extraMsg ? extraMsg.toStringz : null);
+    }
+
+    bool callMetamethod(int index, const char[] method) nothrow
+    {
+        return luaL_callmeta(this.handle, index, method.toStringz) != 0;
+    }
+
+    @nogc
+    void checkAny(int arg) nothrow
+    {
+        luaL_checkany(this.handle, arg);
+    }
+
+    @nogc
+    ptrdiff_t checkInt(int arg) nothrow
+    {
+        return luaL_checkinteger(this.handle, arg);
+    }
+
+    @nogc
+    const(char)[] checkStringWeak(int arg) nothrow
+    {
+        size_t len;
+        const ptr = luaL_checklstring(this.handle, arg, &len);
+        return ptr[0..len];
+    }
+
+    string checkString(int arg) nothrow
+    {
+        return checkStringWeak(arg).idup;
+    }
+
+    @nogc
+    LuaNumber checkNumber(int arg) nothrow
+    {
+        return luaL_checknumber(this.handle, arg);
+    }
+
+    @nogc
+    void checkType(LuaValue.Kind type, int arg) nothrow
+    {
+        int t;
+
+        final switch(type) with(LuaValue.Kind)
+        {
+            case nil: t = LUA_TNIL; break;
+            case number: t = LUA_TNUMBER; break;
+            case textWeak:
+            case text: t = LUA_TSTRING; break;
+            case boolean: t = LUA_TBOOLEAN; break;
+            case tableWeak:
+            case table: t = LUA_TTABLE; break;
+            case funcWeak:
+            case func: t = LUA_TFUNCTION; break;
+        }
+
+        luaL_checktype(this.handle, arg, t);
+    }
+
+    void doFile(const char[] file)
+    {
+        const status = luaL_dofile(this.handle, file.toStringz);
+        if(status != LuaStatus.ok)
+        {
+            const error = this.to!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+    }
+
+    void doString(const char[] str)
+    {
+        const status = luaL_dostring(this.handle, str.toStringz);
+        if(status != LuaStatus.ok)
+        {
+            const error = this.to!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+    }
+
+    void loadFile(const char[] file)
+    {
+        const status = luaL_loadfile(this.handle, file.toStringz);
+        if(status != LuaStatus.ok)
+        {
+            const error = this.to!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+    }
+
+    void loadString(const char[] str)
+    {
+        const status = luaL_loadstring(this.handle, str.toStringz);
+        if(status != LuaStatus.ok)
+        {
+            const error = this.to!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+    }
+
+    @nogc
+    ptrdiff_t optInt(int arg, ptrdiff_t default_) nothrow
+    {
+        return luaL_optinteger(this.handle, arg, default_);
+    }
+
+    @nogc
+    LuaNumber optNumber(int arg, LuaNumber default_) nothrow
+    {
+        return luaL_optnumber(this.handle, arg, default_);
+    }
+
+    void printStack()
+    {
+        writeln("[LUA STACK]");
+        foreach(i; 0..this.top)
+        {
+            const type = lua_type(this.handle, i+1);
+            writef("\t[%s] \t", i+1);
+
+            switch(type)
+            {
+                case LUA_TBOOLEAN: writefln("%s\t%s", "BOOL", this.to!bool(i+1)); break;
+                case LUA_TFUNCTION: writefln("%s\t%s", "FUNC", lua_tocfunction(this.handle, i+1)); break;
+                case LUA_TLIGHTUSERDATA: writefln("%s\t%s", "LIGHT", lua_touserdata(this.handle, i+1)); break;
+                case LUA_TNIL: writefln("%s", "NIL"); break;
+                case LUA_TNUMBER: writefln("%s\t%s", "NUM", this.to!lua_Number(i+1)); break;
+                case LUA_TSTRING: writefln("%s\t%s", "STR", this.to!(const(char)[])(i+1)); break;
+                case LUA_TTABLE: writefln("%s", "TABL"); break;
+                case LUA_TTHREAD: writefln("%s\t%s", "THRD", lua_tothread(this.handle, i+1)); break;
+                case LUA_TUSERDATA: writefln("%s\t%s", "USER", lua_touserdata(this.handle, i+1)); break;
+                default: writefln("%s\t%s", "UNKN", type); break;
+            }
+        }
+    }
+
+    void push(T)(T value)
+    {
+        static if(is(T == typeof(null)) || is(T == LuaNil))
+            lua_pushnil(this.handle);
+        else static if(is(T : const(char)[]))
+            lua_pushlstring(this.handle, value.ptr, value.length);
+        else static if(isNumeric!T)
+            lua_pushnumber(this.handle, value.to!lua_Number);
+        else static if(is(T : const(bool)))
+            lua_pushboolean(this.handle, value ? 1 : 0);
+        else static if(isDynamicArray!T)
+        {
+            alias ValueT = typeof(value[0]);
+
+            lua_createtable(this.handle, 0, value.length.to!int);
+            foreach(i, v; value)
+            {
+                this.push(v);
+                lua_rawseti(this.handle, -2, cast(int)i+1);
+            }
+        }
+        else static if(isAssociativeArray!T)
+        {
+            alias KeyT = KeyType!T;
+            alias ValueT = ValueType!T;
+
+            lua_createtable(this.handle, 0, value.length.to!int);
+            foreach(k, v; value)
+            {
+                this.push(k);
+                this.push(v);
+                lua_rawset(this.handle, -3);
+            }
+        }
+        else static if(is(T == LuaTable) || is(T == LuaFunc))
+            value.push();
+        else static if(is(T == LuaTableWeak) || is(T == LuaFuncWeak))
+            this.copy(value.push());
+        else static if(is(T : lua_CFunction))
+            lua_pushcfunction(this.handle, value);
+        else static assert(false, "Don't know how to push type: "~T.stringof);
+    }
+
+    void push(LuaValue value)
+    {
+        value.visit!(
+            (_){ this.push(_); }
+        );
+    }
+
+    @nogc
+    int top() nothrow
+    {
+        return lua_gettop(this.handle);
+    }
+
+    @nogc
+    void pop(int amount) nothrow
+    {
+        lua_pop(this.handle, amount);
+    }
+
+    T to(T)(int index)
+    {
+        static if(is(T == string))
+        {
+            this.enforceType(LuaValue.Kind.text, index);
+            size_t len;
+            auto ptr = lua_tolstring(this.handle, index, &len);
+            return ptr[0..len].idup;
+        }
+        else static if(is(T == const(char)[]))
+        {
+            this.enforceType(LuaValue.Kind.text, index);
+            size_t len;
+            auto ptr = lua_tolstring(this.handle, index, &len);
+            return ptr[0..len];
+        }
+        else static if(is(T : const(bool)))
+        {
+            this.enforceType(LuaValue.Kind.boolean, index);
+            return lua_toboolean(this.handle, index) != 0;
+        }
+        else static if(isNumeric!T)
+        {
+            this.enforceType(LuaValue.Kind.number, index);
+            return lua_tonumber(this.handle, index).to!T;
+        }
+        else static if(is(T == typeof(null)) || is(T == LuaNil))
+        {
+            this.enforceType(LuaValue.Kind.nil, index);
+            return LuaNil();
+        }
+        else static if(is(T == LuaTableWeak))
+        {
+            this.enforceType(LuaValue.Kind.table, index);
+            return T(&this, index);
+        }
+        else static if(is(T == LuaTable))
+        {
+            this.enforceType(LuaValue.Kind.table, index);
+            this.copy(index);
+            return T.makeRef(&this);
+        }
+        else static if(isDynamicArray!T)
+        {
+            this.enforceType(LuaValue.Kind.table, index);
+            T ret;
+            ret.length = lua_objlen(this.handle, index);
+
+            this.push(null);
+            const tableIndex = index < 0 ? index - 1 : index;
+            while(this.next(tableIndex))
+            {
+                ret[this.to!size_t(-2) - 1] = this.to!(typeof(ret[0]))(-1);
+                this.pop(1);
+            }
+
+            return ret;
+        }
+        else static if(isAssociativeArray!T)
+        {
+            this.enforceType(LuaValue.Kind.table, index);
+            T ret;
+
+            this.push(null);
+            const tableIndex = index < 0 ? index - 1 : index;
+            while(this.next(tableIndex))
+            {
+                ret[this.to!(KeyType!T)(-2)] = this.to!(ValueType!T)(-1);
+                this.pop(1);
+            }
+
+            return ret;
+        }
+        else static if(is(T == LuaCFunc))
+            return lua_tocfunction(this.handle, index);
+        else static if(is(T == LuaFuncWeak))
+            return LuaFuncWeak(&this, index);
+        else static if(is(T == LuaFunc))
+        {
+            this.enforceType(LuaValue.Kind.func, index);
+            this.copy(index);
+            return T.makeRef(&this);
+        }
+        else static if(is(T == LuaValue))
+        {
+            switch(this.type(index))
+            {
+                case LuaValue.Kind.text: return LuaValue(this.to!string(index));
+                case LuaValue.Kind.number: return LuaValue(this.to!lua_Number(index));
+                case LuaValue.Kind.boolean: return LuaValue(this.to!bool(index));
+                case LuaValue.Kind.nil: return LuaValue(this.to!LuaNil(index));
+                case LuaValue.Kind.table: return LuaValue(this.to!LuaTable(index));
+                case LuaValue.Kind.func: return LuaValue(this.to!LuaFunc(index));
+                default: throw new Exception("Don't know how to convert type into a LuaValue: "~this.type(index).to!string);
+            }
+        }
+        else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
+    }
+
+    @nogc
+    bool next(int index) nothrow
+    {
+        this.assertIndex(index);
+        return lua_next(this.handle, index) != 0;
+    }
+
+    void enforceType(LuaValue.Kind expected, int index)
+    {
+        const type = this.type(index);
+        enforce(type == expected, "Expected value at stack index %s to be of type %s but it is %s".format(
+            index, expected, type
+        ));
+    }
+
+    @nogc
+    LuaValue.Kind type(int index) nothrow
+    {
+        assert(this.top > 0, "Stack is empty.");
+        this.assertIndex(index);
+        const type = lua_type(this.handle, index);
+
+        switch(type)
+        {
+            case LUA_TBOOLEAN: return LuaValue.Kind.boolean;
+            case LUA_TNIL: return LuaValue.Kind.nil;
+            case LUA_TNUMBER: return LuaValue.Kind.number;
+            case LUA_TSTRING: return LuaValue.Kind.text;
+            case LUA_TTABLE: return LuaValue.Kind.table;
+            case LUA_TFUNCTION: return LuaValue.Kind.func;
+
+            default: return LuaValue.Kind.nil;
+        }
+    }
+
+    @property @safe @nogc
+    inout(lua_State*) handle() nothrow pure inout
+    {
+        return this._handle;
+    }
+
+    @nogc
+    private void assertIndex(int index) nothrow
+    {
+        if(index > 0)
+            assert(this.top >= index, "Index out of bounds");
+        else
+            assert(this.top + index >= 0, "Index out of bounds");
+    }
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    l.push(null);
+    assert(l.type(-1) == LuaValue.Kind.nil);
+    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.nil);
+    l.pop(1);
+
+    l.push(LuaNil());
+    assert(l.type(-1) == LuaValue.Kind.nil);
+    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.nil);
+    l.pop(1);
+
+    l.push(false);
+    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.boolean);
+    assert(!l.to!bool(-1));
+    l.pop(1);
+
+    l.push(20);
+    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.number);
+    assert(l.to!int(-1) == 20);
+    l.pop(1);
+
+    l.push("abc");
+    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.text);
+    assert(l.to!string(-1) == "abc");
+    assert(l.to!(const(char)[])(-1) == "abc");
+    l.pop(1);
+
+    l.push(["abc", "one"]);
+    assert(l.to!(string[])(-1) == ["abc", "one"]);
+    l.pop(1);
+
+    l.push([LuaValue(200), LuaValue("abc")]);
+    assert(l.to!(LuaValue[])(-1) == [LuaValue(200), LuaValue("abc")]);
+    l.pop(1);
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    l.register!(() => 123)("abc");
+    l.doString("assert(abc() == 123)");
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    l.register!(
+        "funcA", () => "a",
+        "funcB", () => "b"
+    )("lib");
+    l.doString("assert(lib.funcA() == 'a') assert(lib.funcB() == 'b')");
+}

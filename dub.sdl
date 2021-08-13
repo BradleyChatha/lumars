@@ -1,0 +1,12 @@
+name "lumars"
+description "A minimal D application."
+authors "Bradley Chatha"
+copyright "Copyright © 2021, Bradley Chatha"
+license "MIT"
+dependency "bindbc-lua" version="~>0.4.1"
+dependency "taggedalgebraic" version="~>0.11.22"
+configuration "lua51" {
+	targetType "library"
+	dflags "-L./deps/linux64/lua51.a" platform="posix-x86_64"
+	versions "BindLua_Static" "LUA_51"
+}

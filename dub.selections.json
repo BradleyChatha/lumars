@@ -1,0 +1,8 @@
+{
+	"fileVersion": 1,
+	"versions": {
+		"bindbc-loader": "0.3.2",
+		"bindbc-lua": "0.4.1",
+		"taggedalgebraic": "0.11.22"
+	}
+}
