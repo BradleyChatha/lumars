@@ -3,21 +3,41 @@ module lumars.state;
 import bindbc.lua, std, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
 
+/// Used to represent LUA's `nil`.
 struct LuaNil {}
 
+/// See `LuaValue`
 union LuaValueUnion
 {
+    /// LUA `nil`
     LuaNil nil;
+
+    /// A lua number
     lua_Number number;
+
+    /// A weak reference to some text. This text is managed by LUA and not D's GC so is unsafe to escape
     const(char)[] textWeak;
+
+    /// GC-managed text
     string text;
+
+    /// A bool
     bool boolean;
+
+    /// A weak reference to a table currently on the LUA stack.
     LuaTableWeak tableWeak;
+
+    /// A strong reference to a table which is in the LUA registry.
     LuaTable table;
+
+    /// A weak reference to a function currently on the LUA stack.
     LuaFuncWeak funcWeak;
+
+    /// A strong reference to a function which is in the LUA registry.
     LuaFunc func;
 }
 
+/// An enumeration of various status codes LUA may return.
 enum LuaStatus
 {
     ok = 0,
@@ -28,10 +48,16 @@ enum LuaStatus
     errErr = LUA_ERRERR,
 }
 
+/// A `TaggedUnion` of `LuaValueUnion` which is used to bridge the gap between D and Lua values.
 alias LuaValue = TaggedUnion!LuaValueUnion;
 alias LuaNumber = lua_Number;
 alias LuaCFunc = lua_CFunction;
 
+/++
+ + A light wrapper around `lua_State` with some higher level functions for quality of life purposes.
+ +
+ + This struct cannot be copied, so put it on the heap or store it as a global.
+ + ++/
 struct LuaState
 {
     @disable this(this){}
@@ -42,6 +68,7 @@ struct LuaState
         bool _isWrapper;
     }
 
+    /// Creates a wrapper around the given `lua_state`, or creates a new state if the given value is null.
     @trusted @nogc
     this(lua_State* wrapAround) nothrow
     {
@@ -57,6 +84,7 @@ struct LuaState
         }
     }
 
+    /// For non-wrappers, destroy the lua state.
     @trusted @nogc
     ~this() nothrow
     {
@@ -304,7 +332,7 @@ struct LuaState
         const status = luaL_dofile(this.handle, file.toStringz);
         if(status != LuaStatus.ok)
         {
-            const error = this.to!string(-1);
+            const error = this.get!string(-1);
             this.pop(1);
             throw new Exception(error);
         }
@@ -315,7 +343,7 @@ struct LuaState
         const status = luaL_dostring(this.handle, str.toStringz);
         if(status != LuaStatus.ok)
         {
-            const error = this.to!string(-1);
+            const error = this.get!string(-1);
             this.pop(1);
             throw new Exception(error);
         }
@@ -326,7 +354,7 @@ struct LuaState
         const status = luaL_loadfile(this.handle, file.toStringz);
         if(status != LuaStatus.ok)
         {
-            const error = this.to!string(-1);
+            const error = this.get!string(-1);
             this.pop(1);
             throw new Exception(error);
         }
@@ -337,7 +365,7 @@ struct LuaState
         const status = luaL_loadstring(this.handle, str.toStringz);
         if(status != LuaStatus.ok)
         {
-            const error = this.to!string(-1);
+            const error = this.get!string(-1);
             this.pop(1);
             throw new Exception(error);
         }
@@ -365,12 +393,12 @@ struct LuaState
 
             switch(type)
             {
-                case LUA_TBOOLEAN: writefln("%s\t%s", "BOOL", this.to!bool(i+1)); break;
+                case LUA_TBOOLEAN: writefln("%s\t%s", "BOOL", this.get!bool(i+1)); break;
                 case LUA_TFUNCTION: writefln("%s\t%s", "FUNC", lua_tocfunction(this.handle, i+1)); break;
                 case LUA_TLIGHTUSERDATA: writefln("%s\t%s", "LIGHT", lua_touserdata(this.handle, i+1)); break;
                 case LUA_TNIL: writefln("%s", "NIL"); break;
-                case LUA_TNUMBER: writefln("%s\t%s", "NUM", this.to!lua_Number(i+1)); break;
-                case LUA_TSTRING: writefln("%s\t%s", "STR", this.to!(const(char)[])(i+1)); break;
+                case LUA_TNUMBER: writefln("%s\t%s", "NUM", this.get!lua_Number(i+1)); break;
+                case LUA_TSTRING: writefln("%s\t%s", "STR", this.get!(const(char)[])(i+1)); break;
                 case LUA_TTABLE: writefln("%s", "TABL"); break;
                 case LUA_TTHREAD: writefln("%s\t%s", "THRD", lua_tothread(this.handle, i+1)); break;
                 case LUA_TUSERDATA: writefln("%s\t%s", "USER", lua_touserdata(this.handle, i+1)); break;
@@ -441,7 +469,7 @@ struct LuaState
         lua_pop(this.handle, amount);
     }
 
-    T to(T)(int index)
+    T get(T)(int index)
     {
         static if(is(T == string))
         {
@@ -493,7 +521,7 @@ struct LuaState
             const tableIndex = index < 0 ? index - 1 : index;
             while(this.next(tableIndex))
             {
-                ret[this.to!size_t(-2) - 1] = this.to!(typeof(ret[0]))(-1);
+                ret[this.get!size_t(-2) - 1] = this.get!(typeof(ret[0]))(-1);
                 this.pop(1);
             }
 
@@ -508,7 +536,7 @@ struct LuaState
             const tableIndex = index < 0 ? index - 1 : index;
             while(this.next(tableIndex))
             {
-                ret[this.to!(KeyType!T)(-2)] = this.to!(ValueType!T)(-1);
+                ret[this.get!(KeyType!T)(-2)] = this.get!(ValueType!T)(-1);
                 this.pop(1);
             }
 
@@ -528,12 +556,12 @@ struct LuaState
         {
             switch(this.type(index))
             {
-                case LuaValue.Kind.text: return LuaValue(this.to!string(index));
-                case LuaValue.Kind.number: return LuaValue(this.to!lua_Number(index));
-                case LuaValue.Kind.boolean: return LuaValue(this.to!bool(index));
-                case LuaValue.Kind.nil: return LuaValue(this.to!LuaNil(index));
-                case LuaValue.Kind.table: return LuaValue(this.to!LuaTable(index));
-                case LuaValue.Kind.func: return LuaValue(this.to!LuaFunc(index));
+                case LuaValue.Kind.text: return LuaValue(this.get!string(index));
+                case LuaValue.Kind.number: return LuaValue(this.get!lua_Number(index));
+                case LuaValue.Kind.boolean: return LuaValue(this.get!bool(index));
+                case LuaValue.Kind.nil: return LuaValue(this.get!LuaNil(index));
+                case LuaValue.Kind.table: return LuaValue(this.get!LuaTable(index));
+                case LuaValue.Kind.func: return LuaValue(this.get!LuaFunc(index));
                 default: throw new Exception("Don't know how to convert type into a LuaValue: "~this.type(index).to!string);
             }
         }
@@ -596,36 +624,36 @@ unittest
     auto l = LuaState(null);
     l.push(null);
     assert(l.type(-1) == LuaValue.Kind.nil);
-    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.nil);
+    assert(l.get!LuaValue(-1).kind == LuaValue.Kind.nil);
     l.pop(1);
 
     l.push(LuaNil());
     assert(l.type(-1) == LuaValue.Kind.nil);
-    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.nil);
+    assert(l.get!LuaValue(-1).kind == LuaValue.Kind.nil);
     l.pop(1);
 
     l.push(false);
-    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.boolean);
-    assert(!l.to!bool(-1));
+    assert(l.get!LuaValue(-1).kind == LuaValue.Kind.boolean);
+    assert(!l.get!bool(-1));
     l.pop(1);
 
     l.push(20);
-    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.number);
-    assert(l.to!int(-1) == 20);
+    assert(l.get!LuaValue(-1).kind == LuaValue.Kind.number);
+    assert(l.get!int(-1) == 20);
     l.pop(1);
 
     l.push("abc");
-    assert(l.to!LuaValue(-1).kind == LuaValue.Kind.text);
-    assert(l.to!string(-1) == "abc");
-    assert(l.to!(const(char)[])(-1) == "abc");
+    assert(l.get!LuaValue(-1).kind == LuaValue.Kind.text);
+    assert(l.get!string(-1) == "abc");
+    assert(l.get!(const(char)[])(-1) == "abc");
     l.pop(1);
 
     l.push(["abc", "one"]);
-    assert(l.to!(string[])(-1) == ["abc", "one"]);
+    assert(l.get!(string[])(-1) == ["abc", "one"]);
     l.pop(1);
 
     l.push([LuaValue(200), LuaValue("abc")]);
-    assert(l.to!(LuaValue[])(-1) == [LuaValue(200), LuaValue("abc")]);
+    assert(l.get!(LuaValue[])(-1) == [LuaValue(200), LuaValue("abc")]);
     l.pop(1);
 }
 

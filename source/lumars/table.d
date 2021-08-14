@@ -32,12 +32,12 @@ template ipairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
             if(valueType == LuaValue.Kind.text)
             {
                 static if((Options & LuaIterateOption.dontDupeStrings) > 0)
-                    value = LuaValue(table.lua.to!(const(char)[])(-1));
+                    value = LuaValue(table.lua.get!(const(char)[])(-1));
                 else
-                    value = LuaValue(table.lua.to!string(-1));
+                    value = LuaValue(table.lua.get!string(-1));
             }
             else
-                value = table.lua.to!LuaValue(-1);
+                value = table.lua.get!LuaValue(-1);
 
             Func(i, value);
             if(table.lua.top != expectedTop)
@@ -86,24 +86,24 @@ template pairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
             if(keyType == LuaValue.Kind.text)
             {
                 static if((Options & LuaIterateOption.dontDupeStrings) > 0)
-                    key = LuaValue(table.lua.to!(const(char)[])(-2));
+                    key = LuaValue(table.lua.get!(const(char)[])(-2));
                 else
-                    key = LuaValue(table.lua.to!string(-2));
+                    key = LuaValue(table.lua.get!string(-2));
             }
             else
-                key = table.lua.to!LuaValue(-2);
+                key = table.lua.get!LuaValue(-2);
 
             LuaValue value;
             const valueType = table.lua.type(-1);
             if(valueType == LuaValue.Kind.text)
             {
                 static if((Options & LuaIterateOption.dontDupeStrings) > 0)
-                    value = LuaValue(table.lua.to!(const(char)[])(-1));
+                    value = LuaValue(table.lua.get!(const(char)[])(-1));
                 else
-                    value = LuaValue(table.lua.to!string(-1));
+                    value = LuaValue(table.lua.get!string(-1));
             }
             else
-                value = table.lua.to!LuaValue(-1);
+                value = table.lua.get!LuaValue(-1);
 
             Func(key, value);
             table.lua.pop(1);
@@ -113,7 +113,7 @@ template pairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
 
 private mixin template LuaTableFuncs()
 {
-    T to(T, IndexT)(IndexT index)
+    T get(T, IndexT)(IndexT index)
     if(isNumeric!IndexT || is(IndexT == string))
     {
         const meIndex = this.push();
@@ -121,7 +121,7 @@ private mixin template LuaTableFuncs()
         
         this.lua.push(index);
         lua_gettable(this.lua.handle, meIndex < 0 ? meIndex - 1 : meIndex);
-        auto value = this.lua.to!T(-1);
+        auto value = this.lua.get!T(-1);
         this.lua.pop(1);
         return value;
     }
@@ -246,7 +246,7 @@ unittest
     auto l = LuaState(null);
 
     l.push(["Henlo, ", "Warld."]);
-    auto t = l.to!LuaTableWeak(-1);
+    auto t = l.get!LuaTableWeak(-1);
     int i = 0;
     t.ipairs!((k, v)
     {
@@ -257,8 +257,8 @@ unittest
          format("%s, %s", k, v)
         );
     });
-    assert(t.to!string(1) == "Henlo, ");
-    assert(t.to!string(2) == "Warld.");
+    assert(t.get!string(1) == "Henlo, ");
+    assert(t.get!string(2) == "Warld.");
     assert(i == 2);
     t.ipairs!(string, (k, v)
     {
@@ -278,7 +278,7 @@ unittest
             "1": "23"
         ]
     );
-    auto t = l.to!LuaTable(-1);
+    auto t = l.get!LuaTable(-1);
     int i = 0;
     t.pairs!((k, v)
     {
@@ -289,8 +289,8 @@ unittest
          format("%s, %s", k, v)
         );
     });
-    assert(t.to!string("a") == "bc");
-    assert(t.to!string("1") == "23");
+    assert(t.get!string("a") == "bc");
+    assert(t.get!string("1") == "23");
     assert(i == 2);
     l.pop(1);
 }
@@ -302,6 +302,6 @@ unittest
 
     t["test"] = "icles";
     t[4] = 20;
-    assert(t.to!string("test") == "icles");
-    assert(t.to!LuaNumber(4) == 20);
+    assert(t.get!string("test") == "icles");
+    assert(t.get!LuaNumber(4) == 20);
 }
