@@ -49,6 +49,27 @@ template pcall(size_t results)
 
 private mixin template LuaFuncFuncs()
 {
+    auto bind(alias ReturnT, Params...)()
+    {
+        auto bound = LuaBoundFunc!(typeof(this), ReturnT, Params).init;
+        bound.func = this;
+        return bound;
+    }
+}
+
+struct LuaBoundFunc(alias LuaFuncT, alias ReturnT, Params...)
+{
+    LuaFuncT func;
+
+    ReturnT opCall(Params params)
+    {
+        static if(is(ReturnT == void))
+            this.func.pcall!0(params);
+        else
+            return this.func.pcall!1(params)[0].value!ReturnT;
+    }
+
+    alias asDelegate = opCall;
 }
 
 struct LuaFuncWeak 
@@ -216,7 +237,14 @@ unittest
             return true;
         }
     ));
-    auto f = l.to!LuaFuncWeak(-1);
+    auto f = l.to!LuaFunc(-1);
     auto result = f.pcall!1("Hello", [4, 2, 0], ["true": true]);
     assert(result[0].booleanValue);
+    
+    auto f2 = f.bind!(bool, string, int[], bool[string])();
+    assert(f2("Hello", [4, 2, 0], ["true": true]));
+
+    alias F = bool delegate(string, int[], bool[string]);
+    auto f3 = &f2.asDelegate;
+    assert(f3("Hello", [4, 2, 0], ["true": true]));
 }
