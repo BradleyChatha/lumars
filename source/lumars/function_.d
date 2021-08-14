@@ -423,7 +423,7 @@ unittest
     assert(f2("Hello", [4, 2, 0], ["true": true]));
 
     alias F = bool delegate(string, int[], bool[string]);
-    auto f3 = &f2.asDelegate;
+    F f3 = &f2.asDelegate;
     assert(f3("Hello", [4, 2, 0], ["true": true]));
 }
 
