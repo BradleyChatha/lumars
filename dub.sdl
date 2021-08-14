@@ -7,7 +7,7 @@ dependency "bindbc-lua" version="~>0.4.1"
 dependency "taggedalgebraic" version="~>0.11.22"
 configuration "lua51" {
 	targetType "library"
-	dflags "-L./deps/linux64/lua51.a" platform="posix-x86_64"
-	dflags "-L./deps/win64/lua51.lib" platform="windows-x86_64"
+	dflags "-L$PACKAGE_DIR/deps/linux64/lua51.a" platform="posix-x86_64"
+	dflags "-L$PACKAGE_DIR/deps/win64/lua51.lib" platform="windows-x86_64"
 	versions "BindLua_Static" "LUA_51"
 }
