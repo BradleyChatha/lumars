@@ -7,6 +7,8 @@ that I can add as a unittest, which will also make it easier for me to debug.
 
 # Features
 
+* Statically linked
+* Bundled with prebuilt binaries for LuaJit for Windows and Posix
 * Dynamic values using TaggedAlgebraic
 * Ability to convert most D and Lua types to eachother (including structs)
 * Provides a high level interface, but also allows manual manipulation of the stack
