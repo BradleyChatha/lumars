@@ -3,6 +3,13 @@ module lumars.function_;
 
 import bindbc.lua, lumars, std;
 
+enum LuaFuncWrapperType
+{
+    isAliasFunc,
+    isDelegate,
+    isFunction
+}
+
 /++
  + Calls a `LuaFunc` or `LuaFuncWeak` in protected mode, which means an exception is thrown
  + if the function produces a LUA error.
@@ -313,11 +320,12 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
  +
  + Params:
  +  Func = The D function to wrap.
+ +  Type = User code shouldn't ever need to set this, please leave it as the default.
  +
  + Example:
  +  `luaState.register!(std.path.buildPath!(string[]))("buildPath")`
  + ++/
-int luaCWrapperSmart(alias Func)(lua_State* state) nothrow
+int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc)(lua_State* state) nothrow
 {
     return luaCWrapperBasic!((lua)
     {
@@ -335,17 +343,53 @@ int luaCWrapperSmart(alias Func)(lua_State* state) nothrow
             static foreach(i; 0..Params.length)
                 params[i] = lua.get!(Params[i])(i+1);
         }
-
         alias RetT = ReturnType!Func;
-        static if(is(RetT == void))
+
+        static if(Type == LuaFuncWrapperType.isDelegate)
         {
-            Func(params);
-            return 0;
+            alias FuncWithContext = RetT function(Params, void*);
+
+            auto context = lua_touserdata(lua.handle, lua_upvalueindex(1));
+            auto func    = lua_touserdata(lua.handle, lua_upvalueindex(2));
+            auto dFunc   = cast(FuncWithContext)func;
+            
+            static if(is(RetT == void))
+            {
+                dFunc(params, context);
+                return 0;
+            }
+            else
+            {
+                lua.push(dFunc(params, context));
+                return 1;
+            }
+        }
+        else static if(Type == LuaFuncWrapperType.isFunction)
+        {
+            auto func = cast(Func)lua_touserdata(lua.handle, lua_upvalueindex(1));
+            static if(is(RetT == void))
+            {
+                func(params);
+                return 0;
+            }
+            else
+            {
+                lua.push(func(params));
+                return 1;
+            }
         }
         else
         {
-            lua.push(Func(params));
-            return 1;
+            static if(is(RetT == void))
+            {
+                Func(params);
+                return 0;
+            }
+            else
+            {
+                lua.push(Func(params));
+                return 1;
+            }
         }
     })(state);
 }
@@ -381,4 +425,36 @@ unittest
     alias F = bool delegate(string, int[], bool[string]);
     auto f3 = &f2.asDelegate;
     assert(f3("Hello", [4, 2, 0], ["true": true]));
+}
+
+unittest
+{
+    static string func(string a, int b)
+    {
+        assert(a == "bc");
+        assert(b == 123);
+        return "doe ray me";
+    }
+
+    auto l = LuaState(null);
+    l.push(&func);
+    auto f = LuaFuncWeak(&l, -1);
+    auto fb = f.bind!(string, string, int);
+    assert(fb("bc", 123) == "doe ray me");
+}
+
+unittest
+{
+    int closedValue;
+    void del(string a)
+    {
+        assert(a == "bc");
+        closedValue = 123;
+    }
+
+    auto l = LuaState(null);
+    l.push(&del);
+    auto f = LuaFuncWeak(&l, -1);
+    f.pcall!0("bc");
+    assert(closedValue == 123);
 }

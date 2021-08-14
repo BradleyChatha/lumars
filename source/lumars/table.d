@@ -495,3 +495,12 @@ unittest
     l.globalTable["test"] = t2;
     l.doString("assert(test() == 2)");
 }
+
+unittest
+{
+    auto l = LuaState(null);
+    auto t = LuaTable.makeNew(&l);
+    t["hello"] = () => "world";
+    auto f = t.get!LuaFunc("hello").bind!(string);
+    assert(f() == "world");
+}

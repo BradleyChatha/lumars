@@ -454,6 +454,17 @@ struct LuaState
             this.copy(value.push());
         else static if(is(T : lua_CFunction))
             lua_pushcfunction(this.handle, value);
+        else static if(isDelegate!T)
+        {
+            lua_pushlightuserdata(this.handle, value.ptr);
+            lua_pushlightuserdata(this.handle, value.funcptr);
+            lua_pushcclosure(this.handle, &luaCWrapperSmart!(T, LuaFuncWrapperType.isDelegate), 2);
+        }
+        else static if(isPointer!T && isFunction!(PointerTarget!T))
+        {
+            lua_pushlightuserdata(this.handle, value);
+            lua_pushcclosure(this.handle, &luaCWrapperSmart!(T, LuaFuncWrapperType.isFunction), 1);
+        }
         else static if(isPointer!T)
             lua_pushlightuserdata(this.handle, value);
         else static if(is(T == class))
@@ -657,8 +668,10 @@ struct LuaState
             case LUA_TSTRING: return LuaValue.Kind.text;
             case LUA_TTABLE: return LuaValue.Kind.table;
             case LUA_TFUNCTION: return LuaValue.Kind.func;
+            case LUA_TLIGHTUSERDATA: return LuaValue.Kind.userData;
 
-            default: return LuaValue.Kind.nil;
+            default: 
+                return LuaValue.Kind.nil;
         }
     }
 
