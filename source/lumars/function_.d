@@ -127,7 +127,12 @@ struct LuaBoundFunc(alias LuaFuncT, alias ReturnT, Params...)
         static if(is(ReturnT == void))
             this.func.pcall!0(params);
         else
-            return this.func.pcall!1(params)[0].value!ReturnT;
+        {
+            auto result = this.func.pcall!1(params)[0];
+            this.func.lua.push(result);
+            scope(exit) this.func.lua.pop(1);
+            return this.func.lua.get!ReturnT(-1);
+        }
     }
 
     /// Allows taking a pointer to the `opCall` function, so a LUA function can be passed around like a D one!

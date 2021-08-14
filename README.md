@@ -2,7 +2,287 @@
 
 Lumars is a high-level wrapper around LUA 5.1 that aims to be lightweight while providing high quality of life features.
 
-For my GC-phobic friends, please read the [GC Phobia](#gc-phobia) section.
-
 This library is in its early stages, so **expect bugs**. If you can be bothered, please open an issue alongside a minimised, idependent snippet of code
 that I can add as a unittest, which will also make it easier for me to debug.
+
+# Features
+
+* Dynamic values using TaggedAlgebraic
+* Ability to convert most D and Lua types to eachother (including structs)
+* Provides a high level interface, but also allows manual manipulation of the stack
+* Uses a struct-based API instead of classes, to minimise GC usage
+  * Some types use ref counting in order to be easy to move around while still keeping lifetime guarentees
+* Doesn't shy away from the GC, but does try to minimise usage of it
+* Supports Lua 5.1 (mainly for LuaJit)
+* Bind Lua functions to statically typed D functions
+* Lambdas, functions, and delegates can all be exposed to Lua
+
+# Quick Start
+
+## Hello World
+
+Create a new `LuaState`, passing in `null` so a new state is created. This struct is non-copyable so you might want to put it on the GC heap.
+
+```d
+import lumars;
+
+void main()
+{
+    auto l = LuaState(null); // Or `new LuaState`
+    // openlibs is automatically called
+
+    l.doString(`print("Hello, world!")`);
+}
+```
+
+Here's another way by using the built-in `print` function.
+
+```d
+import lumars;
+
+void main()
+{
+    auto l = LuaState(null);
+
+    auto print = l.globalTable.get!LuaFunc("print");
+    print.pcall!0("Hello, world!");
+    // !0 means "no return results"
+}
+```
+
+And here's *another* way where we bind the Lua function into a D function:
+
+```d
+import lumars;
+
+void main()
+{
+    auto l = LuaState(null);
+
+    auto print = l.globalTable.get!LuaFunc("print").bind!(void, string);
+    print("Hello, world!");
+
+    // If you want to pass it around like a D func:
+    alias Func = void delegate(string);
+    Func f = &print.asDelegate;
+}
+```
+
+## Tables
+
+### New Table
+
+```d
+import lumars;
+
+void main()
+{
+    auto l = LuaState(null);
+    auto t = LuaTable.makeNew(&l);
+
+    t["a"] = "bc";
+    t[1] = 23;
+
+    assert(t.get!string("a") == "bc");
+    assert(t.get!int(1) == 23);
+}
+```
+
+### Iterate with ipairs
+
+```d
+import std.conv : to;
+
+auto l = LuaState(null);
+l.doString(`t = { 1, 2, 3 }`);
+
+auto t = l.globalTable.get!LuaTable("t");
+auto sum = 0;
+t.ipairs!((i, /*LuaValue*/ v)
+{
+    sum += v.value!LuaNumber.to!int; // LuaNumber is `double`
+});
+assert(sum == 6);
+```
+
+### Iterate with statically typed ipairs
+
+```d
+auto l = LuaState(null);
+l.doString(`t = { 1, 2, 3 }`);
+
+auto t = l.globalTable.get!LuaTable("t");
+t.ipairs!(int, (i, /*int*/ v)
+{
+    assert(i == v);
+});
+```
+
+### Iterate with pairs
+
+```d
+auto l = LuaState(null);
+l.doString(`t = { a = "bc", [1] = 23 }`);
+
+auto t = l.globalTable.get!LuaTable("t");
+t.pairs!((k, v) // Both are LuaValue
+{
+    if(k.isText && k.value!string == "a")
+        assert(v.value!string == "bc");
+    else if(k.isNumber && k.value!LuaNumber == 1)
+        assert(v.value!LuaNumber == 23);
+    else
+        assert(false);
+});
+```
+
+### Iterate with statically typed pairs
+
+```d
+auto l = LuaState(null);
+l.doString(`t = { a = "bc", easy = 123 }`);
+
+auto t = l.globalTable.get!LuaTable("t");
+t.pairs!(string, LuaValue, (/*string*/ k, /*LuaValue*/ v)
+{
+    if(k == "a")
+        assert(v.value!string == "bc");
+    else if(k == "easy")
+        assert(v.value!LuaNumber == 123);
+    else
+        assert(false);
+});
+```
+
+### Array conversion
+
+```d
+auto l = LuaState(null);
+l.doString(`t = { 1, 2, 3, 4, 5 }`);
+
+auto arr = l.globalTable.get!(int[])("t");
+assert(arr == [1, 2, 3, 4, 5]);
+```
+
+## Functions
+
+### Echo
+
+```d
+auto l = LuaState(null);
+auto t = LuaTable.makeNew(&l);
+
+t["echo"] = (string text){ writeln(text); };
+
+auto f = t.get!LuaFunc("echo").bind!(void, string);
+f("Hello, World!");
+```
+
+### Mapping function
+
+```d
+import std.conv : to;
+
+auto l = LuaState(null);
+
+int[] map(int[] input, LuaFunc mapper)
+{
+    foreach(ref num; input)
+    {
+        LuaValue[1] result = mapper.pcall!1(num);
+        num = result[0].value!LuaNumber.to!int; // Lua numbers are doubles
+    }
+
+    return input;
+}
+
+l.globalTable["map"] = &map;
+l.doString(`
+    local values = {1, 2, 3}
+    local func   = function(n) return n * 2 end
+    local result = map(values, func)
+    assert(result[1] == 2 and result[2] == 4 and result[3] == 6)
+`);
+```
+
+## Structs
+
+Lumars can convert D structs to and from Lua. 
+
+When converting from Lua to D, any unknown fields are ignored, and any missing fields in the struct are set to their initial value.
+
+In the future I'd like to introduce UDAs to customise behaviour, but for now this should be a sensible default.
+
+```d
+static struct B
+{
+    string a;
+}
+
+static struct C
+{
+    string a;
+}
+
+static struct A
+{
+    string a;
+    B[] b;
+    C[string] c;
+}
+
+auto a = A(
+    "bc",
+    [B("c")],
+    ["c": C("123")]
+);
+
+auto l = LuaState(null);
+
+// *Anything* that .push can use is also useable by the likes of LuaTable.
+// We're doing manual stack manip just because it's simpler for this case.
+l.push(a);
+scope(exit) l.pop(1);
+auto luaa = l.get!A(-1);
+
+assert(luaa.a == "bc");
+assert(luaa.b.length == 1);
+assert(luaa.b == [B("c")]);
+assert(luaa.c.length == 1);
+assert(luaa.c["c"] == C("123"));
+```
+
+Another example:
+
+```d
+struct Vector2D
+{
+    float x;
+    float y;
+}
+
+auto l = LuaState(null);
+
+l.doString(`
+    function addVectors(vectA, vectB)
+        return {
+            x = vectA.x + vectB.x,
+            y = vectA.y + vectB.y
+        }
+    end
+`);
+
+auto f = l.globalTable.get!LuaFunc("addVectors").bind!(Vector2D, Vector2D, Vector2D);
+assert(f(
+    Vector2D(1, 1),
+    Vector2D(9, 9)
+) == Vector2D(10, 10));
+```
+
+## Contributing
+
+I'm perfectly fine with anyone wanting to contribute.
+
+I'd especially love it if you open an issue if you come across any bugs.
+
+I'd also love it if you ever think "how do I do X?" and open an issue for it so I can add it to this README.

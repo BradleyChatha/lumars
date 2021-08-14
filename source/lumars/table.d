@@ -56,13 +56,11 @@ template ipairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
 
 template ipairs(ValueT, alias Func)
 {
-    static if(isNumeric!ValueT)
-        static assert(is(ValueT == lua_Number), "Please use `LuaNumber` when asking for a numeric type.");
     void ipairs(LuaTableT)(LuaTableT table)
     {
-        table.ipairs!((k, v)
+        table.ipairs!((k, _)
         {
-            Func(k, v.value!ValueT);
+            Func(k, table.lua.get!ValueT(-1));
         });
     }
 }
@@ -113,10 +111,6 @@ template pairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
 
 template pairs(KeyT, ValueT, alias Func)
 {
-    static if(isNumeric!KeyT)
-        static assert(is(KeyT == lua_Number), "Please use `LuaNumber` when asking for a numeric type.");
-    static if(isNumeric!ValueT)
-        static assert(is(ValueT == lua_Number), "Please use `LuaNumber` when asking for a numeric type.");
     void pairs(LuaTableT)(LuaTableT table)
     {
         table.pairs!((k, v)
@@ -124,11 +118,11 @@ template pairs(KeyT, ValueT, alias Func)
             static if(is(KeyT == LuaValue) && is(ValueT == LuaValue))
                 Func(k, v);
             else static if(is(KeyT == LuaValue))
-                Func(k, v.value!ValueT);
+                Func(k, table.lua.get!ValueT(-1));
             else static if(is(ValueT == LuaValue))
-                Func(k.value!KeyT, v);
+                Func(table.lua.get!KeyT(-2), v);
             else
-                Func(k.value!KeyT, v.value!ValueT);
+                Func(table.lua.get!KeyT(-2), table.lua.get!ValueT(-1));
         });
     }
 }
