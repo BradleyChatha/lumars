@@ -35,6 +35,8 @@ union LuaValueUnion
 
     /// A strong reference to a function which is in the LUA registry.
     LuaFunc func;
+
+    void* userData;
 }
 
 /// An enumeration of various status codes LUA may return.
@@ -64,8 +66,9 @@ struct LuaState
 
     private
     {
-        lua_State* _handle;
-        bool _isWrapper;
+        lua_State*      _handle;
+        bool            _isWrapper;
+        LuaTablePseudo  _G;
     }
 
     /// Creates a wrapper around the given `lua_state`, or creates a new state if the given value is null.
@@ -82,6 +85,8 @@ struct LuaState
             this._handle = luaL_newstate();
             luaL_openlibs(this.handle);
         }
+
+        this._G = LuaTablePseudo(&this, LUA_GLOBALSINDEX);
     }
 
     /// For non-wrappers, destroy the lua state.
@@ -90,6 +95,12 @@ struct LuaState
     {
         if(this._handle && !this._isWrapper)
             lua_close(this._handle);
+    }
+
+    @nogc
+    LuaTablePseudo globalTable() nothrow
+    {
+        return this._G;
     }
     
     @nogc
@@ -131,11 +142,6 @@ struct LuaState
     void error(const char[] msg) nothrow
     {
         luaL_error(this.handle, "%s", msg.toStringz);
-    }
-
-    void pushGlobal(const char[] field) nothrow
-    {
-        lua_getglobal(this.handle, field.toStringz);
     }
 
     LuaTableWeak pushMetatable(int ofIndex)
@@ -322,6 +328,7 @@ struct LuaState
             case table: t = LUA_TTABLE; break;
             case funcWeak:
             case func: t = LUA_TFUNCTION; break;
+            case userData: t = LUA_TLIGHTUSERDATA; break;
         }
 
         luaL_checktype(this.handle, arg, t);
@@ -447,6 +454,21 @@ struct LuaState
             this.copy(value.push());
         else static if(is(T : lua_CFunction))
             lua_pushcfunction(this.handle, value);
+        else static if(isPointer!T)
+            lua_pushlightuserdata(this.handle, value);
+        else static if(is(T == class))
+            lua_pushlightuserdata(this.handle, cast(void*)value);
+        else static if(is(T == struct))
+        {
+            lua_newtable(this.handle);
+
+            static foreach(member; __traits(allMembers, T))
+            {
+                this.push(member);
+                this.push(mixin("value."~member));
+                lua_settable(this.handle, -3);
+            }
+        }
         else static assert(false, "Don't know how to push type: "~T.stringof);
     }
 
@@ -543,14 +565,25 @@ struct LuaState
             return ret;
         }
         else static if(is(T == LuaCFunc))
+        {
+            this.enforceType(LuaValue.Kind.func, index);
             return lua_tocfunction(this.handle, index);
+        }
         else static if(is(T == LuaFuncWeak))
+        {
+            this.enforceType(LuaValue.Kind.func, index);
             return LuaFuncWeak(&this, index);
+        }
         else static if(is(T == LuaFunc))
         {
             this.enforceType(LuaValue.Kind.func, index);
             this.copy(index);
             return T.makeRef(&this);
+        }
+        else static if(isPointer!T || is(T == class))
+        {
+            this.enforceType(LuaValue.Kind.userData, index);
+            return cast(T)lua_touserdata(this.handle, index);
         }
         else static if(is(T == LuaValue))
         {
@@ -562,8 +595,34 @@ struct LuaState
                 case LuaValue.Kind.nil: return LuaValue(this.get!LuaNil(index));
                 case LuaValue.Kind.table: return LuaValue(this.get!LuaTable(index));
                 case LuaValue.Kind.func: return LuaValue(this.get!LuaFunc(index));
+                case LuaValue.Kind.userData: return LuaValue(this.get!(void*)(index));
                 default: throw new Exception("Don't know how to convert type into a LuaValue: "~this.type(index).to!string);
             }
+        }
+        else static if(is(T == struct))
+        {
+            this.enforceType(LuaValue.Kind.table, index);
+            T ret;
+
+            this.push(null);
+            const tableIndex = index < 0 ? index - 1 : index;
+            While: while(this.next(tableIndex))
+            {
+                const field = this.get!(const(char)[])(-2);
+
+                static foreach(member; __traits(allMembers, T))
+                {
+                    if(field == member)
+                    {
+                        mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
+                        this.pop(1);
+                        continue While;
+                    }
+                }
+
+                this.pop(1);
+            }
+            return ret;
         }
         else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
     }
@@ -672,4 +731,49 @@ unittest
         "funcB", () => "b"
     )("lib");
     l.doString("assert(lib.funcA() == 'a') assert(lib.funcB() == 'b')");
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    l.doString("abba = 'chicken tikka'");
+    assert(l.globalTable.get!string("abba") == "chicken tikka");
+    l.globalTable["baab"] = "tikka chicken";
+    assert(l.globalTable.get!string("baab") == "tikka chicken");
+}
+
+unittest
+{
+    static struct B
+    {
+        string a;
+    }
+
+    static struct C
+    {
+        string a;
+    }
+ 
+    static struct A
+    {
+        string a;
+        B[] b;
+        C[string] c;
+    }
+
+    auto a = A(
+        "bc",
+        [B("c")],
+        ["c": C("123")]
+    );
+
+    auto l = LuaState(null);
+    l.push(a);
+
+    auto luaa = l.get!A(-1);
+    assert(luaa.a == "bc");
+    assert(luaa.b.length == 1);
+    assert(luaa.b == [B("c")]);
+    assert(luaa.c.length == 1);
+    assert(luaa.c["c"] == C("123"));
 }

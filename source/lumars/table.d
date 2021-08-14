@@ -57,7 +57,7 @@ template ipairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
 template ipairs(ValueT, alias Func)
 {
     static if(isNumeric!ValueT)
-        static assert(ValueT == lua_Number, "Please use `LuaNumber` when asking for a numeric type.");
+        static assert(is(ValueT == lua_Number), "Please use `LuaNumber` when asking for a numeric type.");
     void ipairs(LuaTableT)(LuaTableT table)
     {
         table.ipairs!((k, v)
@@ -111,11 +111,40 @@ template pairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
     }
 }
 
+template pairs(KeyT, ValueT, alias Func)
+{
+    static if(isNumeric!KeyT)
+        static assert(is(KeyT == lua_Number), "Please use `LuaNumber` when asking for a numeric type.");
+    static if(isNumeric!ValueT)
+        static assert(is(ValueT == lua_Number), "Please use `LuaNumber` when asking for a numeric type.");
+    void pairs(LuaTableT)(LuaTableT table)
+    {
+        table.pairs!((k, v)
+        {
+            static if(is(KeyT == LuaValue) && is(ValueT == LuaValue))
+                Func(k, v);
+            else static if(is(KeyT == LuaValue))
+                Func(k, v.value!ValueT);
+            else static if(is(ValueT == LuaValue))
+                Func(k.value!KeyT, v);
+            else
+                Func(k.value!KeyT, v.value!ValueT);
+        });
+    }
+}
+
 private mixin template LuaTableFuncs()
 {
     T get(T, IndexT)(IndexT index)
     if(isNumeric!IndexT || is(IndexT == string))
     {
+        static assert(
+            !is(IndexT == LuaTableWeak)
+        &&  !is(IndexT == LuaFuncWeak)
+        &&  !is(IndexT == const(char)[]),
+            "Can't use weak references with `get` as this function does not keep the value alive on the stack."
+        );
+
         const meIndex = this.push();
         scope(exit) this.pop();
         
@@ -137,6 +166,15 @@ private mixin template LuaTableFuncs()
         lua_settable(this.lua.handle, meIndex < 0 ? meIndex - 2 : meIndex);
     }
 
+    void setMetatable(LuaTable metatable)
+    {
+        const meIndex = this.push();
+        scope(exit) this.pop();
+
+        metatable.push();
+        lua_setmetatable(this.lua.handle, meIndex);
+    }
+
     void opIndexAssign(T, IndexT)(T value, IndexT index)
     {
         this.set(index, value);
@@ -148,6 +186,65 @@ private mixin template LuaTableFuncs()
         scope(exit) this.pop();
 
         return lua_objlen(this.lua.handle, index);
+    }
+}
+
+struct LuaTablePseudo
+{
+    private
+    {
+        LuaState* _lua;
+        int _index;
+    }
+
+    @safe @nogc
+    this(LuaState* lua, int index) nothrow
+    {
+        this._index = index;
+        this._lua = lua;
+    }
+
+    void pushElement(IndexT)(IndexT index)
+    if(isNumeric!IndexT || is(IndexT == string))
+    {
+        this.lua.push(index);
+        lua_gettable(this.lua.handle, this._index);
+    }
+
+    T get(T, IndexT)(IndexT index)
+    if(isNumeric!IndexT || is(IndexT == string))
+    {
+        static assert(
+            !is(IndexT == LuaTableWeak)
+        &&  !is(IndexT == LuaFuncWeak)
+        &&  !is(IndexT == const(char)[]),
+            "Can't use weak references with `get` as this function does not keep the value alive on the stack."
+        );
+
+        this.lua.push(index);
+        lua_gettable(this.lua.handle, this._index);
+        auto value = this.lua.get!T(-1);
+        this.lua.pop(1);
+        return value;
+    }
+
+    void set(T, IndexT)(IndexT index, T value)
+    if(isNumeric!IndexT || is(IndexT == string))
+    {        
+        this.lua.push(index);
+        this.lua.push(value);
+        lua_settable(this.lua.handle, this._index);
+    }
+
+    void opIndexAssign(T, IndexT)(T value, IndexT index)
+    {
+        this.set(index, value);
+    }
+
+    @property @safe @nogc
+    LuaState* lua() nothrow pure
+    {
+        return this._lua;
     }
 }
 
@@ -166,6 +263,13 @@ struct LuaTableWeak
         lua.enforceType(LuaValue.Kind.table, index);
         this._index = index;
         this._lua = lua;
+    }    
+    
+    void pushElement(IndexT)(IndexT index)
+    if(isNumeric!IndexT || is(IndexT == string))
+    {
+        this.lua.push(index);
+        lua_gettable(this.lua.handle, this._index < 0 ? this._index - 1 : this._index);
     }
 
     @safe @nogc 
@@ -206,6 +310,16 @@ struct LuaTable
         RefCounted!State _state;
     }
 
+    void pushElement(IndexT)(IndexT index)
+    if(isNumeric!IndexT || is(IndexT == string))
+    {
+        this.push();
+        scope(exit) this.lua.remove(-2);
+
+        this.lua.push(index);
+        lua_gettable(this.lua.handle, -2);
+    }
+
     static LuaTable makeRef(LuaState* lua)
     {
         lua.enforceType(LuaValue.Kind.table, -1);
@@ -220,6 +334,40 @@ struct LuaTable
     {
         lua_createtable(lua.handle, arrayCapacity, recordCapacity);
         return LuaTable.makeRef(lua);
+    }
+
+    static LuaTable makeNew(Range)(LuaState* lua, Range range)
+    if(isInputRange!Range)
+    {
+        alias Element = ElementType!Range;
+
+        lua_newtable(lua.handle);
+        static if(is(Element == struct) && __traits(hasMember, Element, "key") && __traits(hasMember, Element, "value"))
+        {
+            foreach(kvp; range)
+            {
+                lua.push(kvp.key);
+                lua.push(kvp.value);
+                lua.rawSet(-3);
+            }
+        }
+        else
+        {
+            int i = 1;
+            foreach(v; range)
+            {
+                lua.push(v);
+                lua.rawSet(-2, i++);
+            }
+        }
+
+        return LuaTable.makeRef(lua);
+    }
+
+    static LuaTable makeNew(AA)(LuaState* lua, AA aa)
+    if(isAssociativeArray!AA)
+    {
+        return makeNew(lua, aa.byKeyValue);
     }
 
     @nogc
@@ -304,4 +452,46 @@ unittest
     t[4] = 20;
     assert(t.get!string("test") == "icles");
     assert(t.get!LuaNumber(4) == 20);
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    auto t = LuaTable.makeNew(&l, iota(1, 11));
+    assert(t.length == 10);
+    t.ipairs!(LuaNumber, (i, v)
+    {
+        assert(i == v);
+    });
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    auto t = LuaTable.makeNew(&l, ["a": "bc", "1": "23"]);
+
+    int count;
+    t.pairs!(string, string, (k, v)
+    {
+        if(k == "a")
+            assert(v == "bc");
+        else if(k == "1")
+            assert(v == "23");
+        else
+            assert(false);
+        count++;
+    });
+    assert(count == 2);
+}
+
+unittest
+{
+    auto l = LuaState(null);
+    auto t = LuaTable.makeNew(&l);
+    t["__call"] = &luaCWrapperSmart!(() => 2);
+    auto t2 = LuaTable.makeNew(&l);
+    t2.setMetatable(t);
+
+    l.globalTable["test"] = t2;
+    l.doString("assert(test() == 2)");
 }
