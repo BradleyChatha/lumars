@@ -1,5 +1,5 @@
 name "lumars"
-description "A minimal D application."
+description "A high level, lightweight LUA library."
 authors "Bradley Chatha"
 copyright "Copyright © 2021, Bradley Chatha"
 license "MIT"
