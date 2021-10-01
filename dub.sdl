@@ -10,4 +10,5 @@ configuration "lua51" {
 	dflags "-L$PACKAGE_DIR/deps/linux64/lua51.a" platform="posix-x86_64"
 	dflags "-L$PACKAGE_DIR/deps/win64/lua51.lib" platform="windows-x86_64"
 	versions "BindLua_Static" "LUA_51"
+    subConfiguration "bindbc-lua" "static"
 }
