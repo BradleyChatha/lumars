@@ -67,9 +67,9 @@ struct LuaState
     private
     {
         lua_State*      _handle;
-        bool            _isWrapper;
         LuaTablePseudo  _G;
     }
+    package bool        _isWrapper;
 
     /// Creates a wrapper around the given `lua_state`, or creates a new state if the given value is null.
     @trusted @nogc

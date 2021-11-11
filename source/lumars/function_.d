@@ -216,10 +216,11 @@ struct LuaFunc
         {
             LuaState* lua;
             int ref_;
+            bool isWrapper;
             
             ~this()
             {
-                if(this.lua)
+                if(this.lua && !this.isWrapper)
                     luaL_unref(this.lua.handle, LUA_REGISTRYINDEX, this.ref_);
             }
         }
@@ -236,6 +237,7 @@ struct LuaFunc
         RefCounted!State state;
         state.lua = lua;
         state.ref_ = luaL_ref(lua.handle, LUA_REGISTRYINDEX);
+        state.isWrapper = lua._isWrapper;
 
         return LuaFunc(state);
     }
