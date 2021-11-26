@@ -21,6 +21,7 @@ that I can add as a unittest, which will also make it easier for me to debug.
     - [Mapping function](#mapping-function)
   - [Structs](#structs)
   - [nogc strings](#nogc-strings)
+  - [EmmyLua Annotations (IDE autocomplete)](#emmylua-annotations-ide-autocomplete)
 - [Contributing](#contributing)
 
 # Features
@@ -306,6 +307,54 @@ can instead use `const(char)[]` which won't allocate any GC memory.
 
 You do however have to keep in mind that the lifetime of the string is now attached to the lifetime of the stack variable, so
 be careful.
+
+## EmmyLua Annotations (IDE autocomplete)
+
+One common annoyance when dealing with a mix of Lua and host language code, is the lack of autocompletion provided by your
+IDE when programming.
+
+To help solve this issue, Lumars can help you generate a Lua file filled with [EmmyLua](https://emmylua.github.io/annotation.html) annotations, allowing you to gain intelisense for any plugin that supports EmmyLua annotations.
+
+It does a pretty ok job, but there's still a *lot* of room for improvement.
+
+The easiest way to use it is like this:
+
+```d
+import lumars;
+import std.meta : AliasSeq;
+
+struct S
+{
+    int a;
+    LuaValue b;
+}
+
+alias EXPORT = AliasSeq!(
+    "myfunc1", (string s, LuaValue v) { return S.init; }
+);
+
+void registerFuncs(LuaState* lua)
+{
+    lua.register!EXPORT("mylib");
+
+    EmmyLuaBuilder b;
+    b.addFunctions!EXPORT("mylib");
+    
+    import std.file : write;
+    write("api.lua", b.toString());
+    /++
+        mylib = mylib or {}
+        ---@class S
+        ---@field public a number
+        ---@field public b any
+        local S
+        --@type fun(_:string, _:any):S
+        mylib.myfunc1 = mylib.myfunc1 or function() assert(false, 'not implemented') end
+    ++/
+}
+```
+
+Then simply `require("api.lua")` in your lua code, et voila (hopefully).
 
 # Contributing
 
