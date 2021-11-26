@@ -5,19 +5,37 @@ Lumars is a high-level wrapper around LUA 5.1 that aims to be lightweight while 
 This library is in its early stages, so **expect bugs**. If you can be bothered, please open an issue alongside a minimised, idependent snippet of code
 that I can add as a unittest, which will also make it easier for me to debug.
 
+- [Overview](#overview)
+- [Features](#features)
+- [Quick Start](#quick-start)
+  - [Hello World](#hello-world)
+  - [Tables](#tables)
+    - [New Table](#new-table)
+    - [Iterate with ipairs](#iterate-with-ipairs)
+    - [Iterate with statically typed ipairs](#iterate-with-statically-typed-ipairs)
+    - [Iterate with pairs](#iterate-with-pairs)
+    - [Iterate with statically typed pairs](#iterate-with-statically-typed-pairs)
+    - [Array conversion](#array-conversion)
+  - [Functions](#functions)
+    - [Echo](#echo)
+    - [Mapping function](#mapping-function)
+  - [Structs](#structs)
+  - [nogc strings](#nogc-strings)
+- [Contributing](#contributing)
+
 # Features
 
-* Statically linked
-* Bundled with prebuilt binaries for LuaJit for Windows and Posix
-* Dynamic values using TaggedAlgebraic
-* Ability to convert most D and Lua types to eachother (including structs)
-* Provides a high level interface, but also allows manual manipulation of the stack
-* Uses a struct-based API instead of classes, to minimise GC usage
-  * Some types use ref counting in order to be easy to move around while still keeping lifetime guarentees
-* Doesn't shy away from the GC, but does try to minimise usage of it
-* Supports Lua 5.1 (mainly for LuaJit)
-* Bind Lua functions to statically typed D functions
-* Lambdas, functions, and delegates can all be exposed to Lua
+- Statically linked
+- Bundled with prebuilt binaries for LuaJit for Windows and Posix
+- Dynamic values using TaggedAlgebraic
+- Ability to convert most D and Lua types to eachother (including structs)
+- Provides a high level interface, but also allows manual manipulation of the stack
+- Uses a struct-based API instead of classes, to minimise GC usage
+  - Some types use ref counting in order to be easy to move around while still keeping lifetime guarentees
+- Doesn't shy away from the GC, but does try to minimise usage of it
+- Supports Lua 5.1 (mainly for LuaJit)
+- Bind Lua functions to statically typed D functions
+- Lambdas, functions, and delegates can all be exposed to Lua
 
 # Quick Start
 
@@ -52,7 +70,7 @@ void main()
 }
 ```
 
-And here's *another* way where we bind the Lua function into a D function:
+And here's *another- way where we bind the Lua function into a D function:
 
 ```d
 import lumars;
@@ -201,7 +219,7 @@ int[] map(int[] input, LuaFunc mapper)
 l.globalTable["map"] = &map;
 l.doString(`
     local values = {1, 2, 3}
-    local func   = function(n) return n * 2 end
+    local func   = function(n) return n - 2 end
     local result = map(values, func)
     assert(result[1] == 2 and result[2] == 4 and result[3] == 6)
 `);
@@ -209,7 +227,7 @@ l.doString(`
 
 ## Structs
 
-Lumars can convert D structs to and from Lua. 
+Lumars can convert D structs to and from Lua.
 
 When converting from Lua to D, any unknown fields are ignored, and any missing fields in the struct are set to their initial value.
 
@@ -241,7 +259,7 @@ auto a = A(
 
 auto l = LuaState(null);
 
-// *Anything* that .push can use is also useable by the likes of LuaTable.
+// *Anything- that .push can use is also useable by the likes of LuaTable.
 // We're doing manual stack manip just because it's simpler for this case.
 l.push(a);
 scope(exit) l.pop(1);
@@ -281,7 +299,15 @@ assert(f(
 ) == Vector2D(10, 10));
 ```
 
-## Contributing
+## nogc strings
+
+Anytime you need to access a string that's on the Lua stack, instead of specifying a string (e.g. `state.get!string(-1)`) you
+can instead use `const(char)[]` which won't allocate any GC memory.
+
+You do however have to keep in mind that the lifetime of the string is now attached to the lifetime of the stack variable, so
+be careful.
+
+# Contributing
 
 I'm perfectly fine with anyone wanting to contribute.
 
