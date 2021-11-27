@@ -1,7 +1,7 @@
 /// Everything to do with functions.
 module lumars.function_;
 
-import bindbc.lua, lumars, std;
+import bindbc.lua, lumars;
 
 enum LuaFuncWrapperType
 {
@@ -208,6 +208,7 @@ struct LuaFuncWeak
  + ++/
 struct LuaFunc 
 {
+    import std.typecons : RefCounted;
     mixin LuaFuncFuncs;
 
     private
@@ -292,6 +293,8 @@ struct LuaFunc
  + ++/
 int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
 {
+    import std.exception : assumeWontThrow;
+    import std.format : format;
     scope wrapper = LuaState(state);
 
     try
@@ -334,6 +337,8 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
  + ++/
 int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc)(lua_State* state) nothrow
 {
+    import std.traits : Parameters, ReturnType;
+
     return luaCWrapperBasic!((lua)
     {
         alias Params = Parameters!Func;

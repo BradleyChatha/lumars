@@ -1,6 +1,6 @@
 module lumars.table;
 
-import std, bindbc.lua, lumars;
+import bindbc.lua, lumars;
 import std.traits : isNumeric;
 
 enum LuaIterateOption
@@ -13,6 +13,8 @@ template ipairs(alias Func, LuaIterateOption Options = LuaIterateOption.none)
 {
     void ipairs(LuaTableT)(LuaTableT table)
     {
+        import std.format : format;
+
         const index = table.push();
         scope(exit) table.pop();
 
@@ -286,6 +288,9 @@ struct LuaTableWeak
 
 struct LuaTable 
 {
+    import std.range : isInputRange;
+    import std.traits : isAssociativeArray;
+    import std.typecons : RefCounted;
     mixin LuaTableFuncs;
 
     private
@@ -335,6 +340,7 @@ struct LuaTable
     static LuaTable makeNew(Range)(LuaState* lua, Range range)
     if(isInputRange!Range)
     {
+        import std.range : ElementType;
         alias Element = ElementType!Range;
 
         lua_newtable(lua.handle);
@@ -387,6 +393,7 @@ struct LuaTable
 
 unittest
 {
+    import std;
     auto l = LuaState(null);
 
     l.push(["Henlo, ", "Warld."]);
@@ -414,6 +421,7 @@ unittest
 
 unittest
 {
+    import std;
     auto l = LuaState(null);
 
     l.push(
@@ -452,6 +460,7 @@ unittest
 
 unittest
 {
+    import std;
     auto l = LuaState(null);
     auto t = LuaTable.makeNew(&l, iota(1, 11));
     assert(t.length == 10);

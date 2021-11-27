@@ -1,6 +1,6 @@
 module lumars.state;
 
-import bindbc.lua, std, taggedalgebraic, lumars;
+import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
 
 /// Used to represent LUA's `nil`.
@@ -62,6 +62,9 @@ alias LuaCFunc = lua_CFunction;
  + ++/
 struct LuaState
 {
+    import std.string : toStringz;
+    import std.stdio : writefln, writeln, writef;
+
     @disable this(this){}
 
     private
@@ -416,6 +419,10 @@ struct LuaState
 
     void push(T)(T value)
     {
+        import std.conv : to;
+        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isDelegate, isPointer, isFunction,
+                            PointerTarget, KeyType, ValueType;
+
         static if(is(T == typeof(null)) || is(T == LuaNil))
             lua_pushnil(this.handle);
         else static if(is(T : const(char)[]))
@@ -504,6 +511,9 @@ struct LuaState
 
     T get(T)(int index)
     {
+        import std.conv : to;
+        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType;
+
         static if(is(T == string))
         {
             this.enforceType(LuaValue.Kind.text, index);
@@ -647,6 +657,8 @@ struct LuaState
 
     void enforceType(LuaValue.Kind expected, int index)
     {
+        import std.exception : enforce;
+        import std.format    : format;
         const type = this.type(index);
         enforce(type == expected, "Expected value at stack index %s to be of type %s but it is %s".format(
             index, expected, type
