@@ -1,15 +1,19 @@
 module lumars.emmylua;
 
-import std, lumars;
+import lumars;
 
 struct EmmyLuaBuilder
 {
+    import std.array : Appender;
+
     private Appender!(char[]) _output;
     private string[] _tables;
     private string[] _typeNames;
 
     private void addTable(string name)
     {
+        import std.algorithm : canFind;
+
         if(!name.length)
             return;
 
@@ -65,6 +69,9 @@ struct EmmyLuaBuilder
 
     private void putType(T)()
     {
+        import std.algorithm : canFind;
+        import std.traits : fullyQualifiedName, isDynamicArray, isSomeFunction;
+
         const fqn = fullyQualifiedName!T;
         if(this._typeNames.canFind(fqn) || is(T == LuaValue) || is(T == LuaNumber))
             return;
@@ -178,6 +185,9 @@ template addFunction(alias Func) // Have to do this otherwise I get the fucking 
 {
     void addFunction(ref EmmyLuaBuilder b, string table, string name, string description = "")
     {
+        import std.array : Appender;
+        import std.traits : ParameterIdentifierTuple, Parameters, ReturnType;
+
         b.addTable(table);
 
         Appender!(char[]) suboutput;
@@ -223,11 +233,12 @@ private:
 
 string getTypeName(T)()
 {
-    import std.traits : isNumericT = isNumeric;
+    import std.range : ElementType;
+    import std.traits : isNumeric, isDynamicArray;
 
     static if(is(T == LuaValue))
         return "any";
-    else static if(is(T == LuaNumber) || isNumericT!T)
+    else static if(is(T == LuaNumber) || isNumeric!T)
         return "number";
     else static if(is(T == void) || is(T == typeof(null)))
         return "nil";
