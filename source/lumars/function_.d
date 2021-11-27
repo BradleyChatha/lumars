@@ -337,12 +337,17 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
  + ++/
 int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc)(lua_State* state) nothrow
 {
+    import std.format : format;
     import std.traits : Parameters, ReturnType;
 
     return luaCWrapperBasic!((lua)
     {
         alias Params = Parameters!Func;
         Params params;
+
+        const argsGiven = lua.top();
+        if(argsGiven != Params.length)
+            throw new Exception("Expected exactly %s args, but was given %s.".format(Params.length, argsGiven));
         
         static if(is(Params[0] == LuaState*))
         {
@@ -469,4 +474,17 @@ unittest
     auto f = LuaFuncWeak(&l, -1);
     f.pcall!0("bc");
     assert(closedValue == 123);
+}
+
+unittest
+{
+    import std.exception : assertThrown, assertNotThrown;
+
+    auto l = LuaState(null);
+    l.register("test", &luaCWrapperSmart!((string s){  }));
+
+    auto f = l.globalTable.get!LuaFunc("test");
+    f.pcall!0().assertThrown;
+    f.pcall!0("abc").assertNotThrown;
+    f.pcall!0("abc", "123").assertThrown;
 }

@@ -493,7 +493,7 @@ unittest
 {
     auto l = LuaState(null);
     auto t = LuaTable.makeNew(&l);
-    t["__call"] = &luaCWrapperSmart!(() => 2);
+    t["__call"] = &luaCWrapperSmart!((LuaValue _) => 2);
     auto t2 = LuaTable.makeNew(&l);
     t2.setMetatable(t);
 
