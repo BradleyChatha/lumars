@@ -19,6 +19,7 @@ that I can add as a unittest, which will also make it easier for me to debug.
   - [Functions](#functions)
     - [Echo](#echo)
     - [Mapping function](#mapping-function)
+    - [Registering a library](#registering-a-library)
   - [Structs](#structs)
   - [nogc strings](#nogc-strings)
   - [EmmyLua Annotations (IDE autocomplete)](#emmylua-annotations-ide-autocomplete)
@@ -224,6 +225,95 @@ l.doString(`
     local result = map(values, func)
     assert(result[1] == 2 and result[2] == 4 and result[3] == 6)
 `);
+```
+
+### Registering a library
+
+You can use the `LuaState.register` function to easily create a Lua table full of functions (a.k.a a Library)
+
+Here's two examples:
+
+```d
+import lumars, api, std.path, std.file, std.array;
+
+void registerPathApi(LuaState* lua)
+{
+    lua.register!(
+        "absolutePath",     (string path, string base)  => absolutePath(path, base),
+        "absolutePathCwd",  (string path)               => absolutePath(path),
+        "buildPath",        (string[] paths)            => buildNormalizedPath(paths),
+        "defaultExtension", (string path, string ext)   => defaultExtension(path, ext),
+        "dirName",          (string path)               => dirName(path),
+        "expandTilde",      (string path)               => expandTilde(path),
+        "extension",        (string path)               => extension(path),
+        "getcwd",           ()                          => getcwd(),
+        "globMatch",        (string path, string patt)  => globMatch(path, patt),
+        "isAbsolute",       (string path)               => isAbsolute(path),
+        "isValidFilename",  (string filename)           => isValidFilename(filename),
+        "isValidPath",      (string path)               => isValidPath(path),
+        "normalisePath",    (string path)               => asNormalizedPath(path).array,
+        "relativePath",     (string path, string base)  => relativePath(path, base),
+        "relativePathCwd",  (string path)               => relativePath(path),
+        "setExtension",     (string path, string ext)   => setExtension(path, ext),
+        "stripExtension",   (string path)               => stripExtension(path)
+    )("sh.path");
+}
+```
+
+```d
+import lumars, api, std.file, std.exception, std.conv, std.algorithm, std.array;
+
+void registerFsApi(LuaState* lua)
+{
+    lua.register!(
+        "append", (LuaState* l, string file, LuaValue v) {
+            enforce(v.isTable || v.isText, "Expected parameter 2 to be a table or a string.");
+            if(v.isText)
+                append(file, v.textValue);
+            else
+            {
+                auto t = v.tableValue;
+                if(t.length == 0)
+                    return;
+                t.push();
+                scope(exit) l.pop(1);
+                append(file, l.get!(ubyte[])(-1));
+            }
+        },
+        "chdir",            chdir!string,
+        "copy",             (string from, string to)    => copy(from, to),
+        "dirEntries",       (string path, string mode)  => dirEntries(path, mode.to!SpanMode).map!(de => de.name).array,
+        "dirEntriesGlob",   (string path, string pattern, string mode)  
+                                                        => dirEntries(path, pattern, mode.to!SpanMode).map!(de => de.name).array,
+        "exists",           exists!string,
+        "getSize",          getSize!string,
+        "isDir",            isDir!string,
+        "isFile",           isFile!string,
+        "mkdir",            mkdir!string,
+        "mkdirRecurse",     mkdirRecurse,
+        "readString",       (string file)               => readText(file),
+        "readBytes",        (string str)                => cast(ubyte[])read(str),
+        "remove",           std.file.remove!string,
+        "rename",           rename!(string, string),
+        "rmdir",            rmdir!string,
+        "rmDirRecurse",     rmdirRecurse,
+        "tempDir",          tempDir,
+        "write", (LuaState* l, string file, LuaValue v) {
+            enforce(v.isTable || v.isText, "Expected parameter 2 to be a table or a string.");
+            if(v.isText)
+                write(file, v.textValue);
+            else
+            {
+                auto t = v.tableValue;
+                if(t.length == 0)
+                    return;
+                t.push();
+                scope(exit) l.pop(1);
+                write(file, l.get!(ubyte[])(-1));
+            }
+        },
+    )("sh.fs");
+}
 ```
 
 ## Structs
