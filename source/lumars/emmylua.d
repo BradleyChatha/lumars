@@ -73,7 +73,7 @@ struct EmmyLuaBuilder
         import std.traits : fullyQualifiedName, isDynamicArray, isSomeFunction;
 
         const fqn = fullyQualifiedName!T;
-        if(this._typeNames.canFind(fqn) || is(T == LuaValue) || is(T == LuaNumber))
+        if(this._typeNames.canFind(fqn) || is(T == LuaValue) || is(T == LuaNumber) || is(T == LuaTable))
             return;
         this._typeNames ~= fqn;
 
@@ -178,7 +178,8 @@ unittest
         "readln", () { return ""; }
     )("sh");
 
-    // writeln(b.toString());
+    import std.stdio : writeln;
+    writeln(b.toString());
 }
 
 template addFunction(alias Func) // Have to do this otherwise I get the fucking crappy-ass "dual-context" error.
@@ -240,6 +241,8 @@ string getTypeName(T)()
         return "any";
     else static if(is(T == LuaNumber) || isNumeric!T)
         return "number";
+    else static if(is(T == LuaTable))
+        return "table";
     else static if(is(T == void) || is(T == typeof(null)))
         return "nil";
     else static if(isDynamicArray!T && !is(T == string))
