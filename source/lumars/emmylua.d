@@ -89,7 +89,7 @@ struct EmmyLuaBuilder
             {{
                 alias Member = __traits(getMember, T, member);
 
-                static if(__traits(compiles, mixin("T.init."~member~" = T.init."~member))) // Is it public and a variable?
+                static if(__traits(compiles, {mixin("T t; t."~member~" = T.init."~member~";");})) // Is it public and a variable?
                 {
                     alias MemberT = typeof(mixin("T.init."~member));
                     static if(!isSomeFunction!MemberT) // Handles a weird edge case: T func(T)
