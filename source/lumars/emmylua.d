@@ -187,13 +187,14 @@ template addFunction(alias Func) // Have to do this otherwise I get the fucking 
     void addFunction(ref EmmyLuaBuilder b, string table, string name, string description = "")
     {
         import std.array : Appender;
+        import std.conv : to;
         import std.traits : ParameterIdentifierTuple, Parameters, ReturnType;
 
         b.addTable(table);
 
         Appender!(char[]) suboutput;
 
-        suboutput.put("--@type fun(");
+        suboutput.put("---@type fun(");
         alias idents = ParameterIdentifierTuple!Func;
         static foreach(i, param; Parameters!Func)
         {{
@@ -201,7 +202,7 @@ template addFunction(alias Func) // Have to do this otherwise I get the fucking 
             {
                 b.putType!param();
 
-                const ident = idents[i].length ? idents[i] : "_";
+                const ident = idents[i].length ? idents[i] : "param"~i.to!string;
                 suboutput.put(ident);
                 suboutput.put(':');
                 suboutput.put(getTypeName!param);
