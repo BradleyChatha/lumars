@@ -343,11 +343,16 @@ int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.is
     return luaCWrapperBasic!((lua)
     {
         alias Params = Parameters!Func;
+        static if(is(Params[0] == LuaState*))
+            const ParamsLength = Params.length-1;
+        else
+            const ParamsLength = Params.length;
+
         Params params;
 
         const argsGiven = lua.top();
-        if(argsGiven != Params.length)
-            throw new Exception("Expected exactly %s args, but was given %s.".format(Params.length, argsGiven));
+        if(argsGiven != ParamsLength)
+            throw new Exception("Expected exactly %s args, but was given %s.".format(ParamsLength, argsGiven));
         
         static if(is(Params[0] == LuaState*))
         {
