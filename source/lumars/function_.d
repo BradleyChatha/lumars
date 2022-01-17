@@ -493,3 +493,26 @@ unittest
     f.pcall!0("abc").assertNotThrown;
     f.pcall!0("abc", "123").assertThrown;
 }
+
+unittest
+{
+    static struct S
+    {
+        int i;
+
+        void test(int value)
+        {
+            assert(value == i);
+        }
+
+        void bind(LuaState* l)
+        {
+            l.register!("test", function (int value) => S(200).test(value))("api");
+        }
+    }
+
+    auto lua = new LuaState(null);
+    S s;
+    s.bind(lua);
+    lua.doString("api.test(200)");
+}

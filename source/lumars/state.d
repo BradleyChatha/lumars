@@ -421,7 +421,7 @@ struct LuaState
     {
         import std.conv : to;
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isDelegate, isPointer, isFunction,
-                            PointerTarget, KeyType, ValueType;
+                            PointerTarget, KeyType, ValueType, FieldNameTuple;
 
         static if(is(T == typeof(null)) || is(T == LuaNil))
             lua_pushnil(this.handle);
@@ -480,7 +480,7 @@ struct LuaState
         {
             lua_newtable(this.handle);
 
-            static foreach(member; __traits(allMembers, T))
+            static foreach(member; FieldNameTuple!T)
             {
                 this.push(member);
                 this.push(mixin("value."~member));
