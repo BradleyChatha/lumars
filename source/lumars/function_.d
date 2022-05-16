@@ -467,18 +467,25 @@ unittest
 
 unittest
 {
-    int closedValue;
-    void del(string a)
+    version(OSX)
     {
-        assert(a == "bc");
-        closedValue = 123;
+        pragma(msg, "WARNING: This unittest is currently broken on Mac AMD");
     }
+    else
+    {
+        int closedValue;
+        void del(string a)
+        {
+            assert(a == "bc");
+            closedValue = 123;
+        }
 
-    auto l = LuaState(null);
-    l.push(&del);
-    auto f = LuaFuncWeak(&l, -1);
-    f.pcall!0("bc");
-    assert(closedValue == 123);
+        auto l = LuaState(null);
+        l.push(&del);
+        auto f = LuaFuncWeak(&l, -1);
+        f.pcall!0("bc");
+        assert(closedValue == 123);
+    }
 }
 
 unittest

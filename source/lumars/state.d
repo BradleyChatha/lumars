@@ -348,10 +348,58 @@ struct LuaState
         }
     }
 
+    void doFile(const char[] file, scope ref LuaTable table)
+    {
+        const loadStatus = luaL_loadfile(this.handle, file.toStringz);
+        if(loadStatus != LuaStatus.ok)
+        {
+            const error = this.get!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+
+        table.push();
+        const fenvResult = lua_setfenv(this.handle, -2);
+        if(fenvResult == 0)
+            throw new Exception("Failed to set function environment");
+
+        const callStatus = lua_pcall(this.handle, 0, 0, 0);
+        if(callStatus != LuaStatus.ok)
+        {
+            const error = this.get!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+    }
+
     void doString(const char[] str)
     {
         const status = luaL_dostring(this.handle, str.toStringz);
         if(status != LuaStatus.ok)
+        {
+            const error = this.get!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+    }
+
+    void doString(const char[] str, scope ref LuaTable table)
+    {
+        const loadStatus = luaL_loadstring(this.handle, str.toStringz);
+        if(loadStatus != LuaStatus.ok)
+        {
+            const error = this.get!string(-1);
+            this.pop(1);
+            throw new Exception(error);
+        }
+
+        table.push();
+        const fenvResult = lua_setfenv(this.handle, -2);
+        if(fenvResult == 0)
+            throw new Exception("Failed to set function environment");
+
+        const callStatus = lua_pcall(this.handle, 0, 0, 0);
+        if(callStatus != LuaStatus.ok)
         {
             const error = this.get!string(-1);
             this.pop(1);
@@ -801,4 +849,22 @@ unittest
     assert(luaa.b == [B("c")]);
     assert(luaa.c.length == 1);
     assert(luaa.c["c"] == C("123"));
+}
+
+unittest
+{
+    import std.exception : assertThrown;
+    auto state = LuaState(null);
+    auto print = state._G.get!LuaFunc("print");
+    auto _G1 = LuaTable.makeNew(&state);
+    auto _G2 = LuaTable.makeNew(&state);
+    _G1["abc"] = 123;
+    _G1["print"] = print;
+    _G2["abc"] = 321;
+    _G2["print"] = print;
+
+    const code = "print(abc)";
+
+    state.doString(code, _G1);
+    state.doString(code, _G2);
 }
