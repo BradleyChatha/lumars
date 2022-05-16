@@ -467,9 +467,9 @@ unittest
 
 unittest
 {
-    version(OSX)
+    version(LDC)
     {
-        pragma(msg, "WARNING: This unittest is currently broken on Mac AMD");
+        pragma(msg, "WARNING: This unittest is currently broken under LDC");
     }
     else
     {
