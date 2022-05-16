@@ -21,6 +21,7 @@ that I can add as a unittest, which will also make it easier for me to debug.
     - [Mapping function](#mapping-function)
     - [Registering a library](#registering-a-library)
   - [Structs](#structs)
+  - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
   - [nogc strings](#nogc-strings)
   - [EmmyLua Annotations (IDE autocomplete)](#emmylua-annotations-ide-autocomplete)
 - [Contributing](#contributing)
@@ -388,6 +389,26 @@ assert(f(
     Vector2D(1, 1),
     Vector2D(9, 9)
 ) == Vector2D(10, 10));
+```
+
+## Executing a string or file with a different _G table
+
+For sandboxing reasons, among other reasons, it's useful to be able to run external Lua under with a different
+environment table. Lumars supports this easily:
+
+```d
+unittest
+{
+    auto state   = LuaState(null);
+    auto print   = state._G.get!LuaFunc("print");
+    auto _G1     = LuaTable.makeNew(&state);
+    _G1["abc"]   = 123;
+    _G1["print"] = print;
+
+    const code = "print(abc)";
+
+    state.doString(code, _G1); // or doFile
+}
 ```
 
 ## nogc strings

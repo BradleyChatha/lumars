@@ -853,7 +853,6 @@ unittest
 
 unittest
 {
-    import std.exception : assertThrown;
     auto state = LuaState(null);
     auto print = state._G.get!LuaFunc("print");
     auto _G1 = LuaTable.makeNew(&state);
