@@ -511,6 +511,7 @@ struct LuaState
             lua_pushcfunction(this.handle, value);
         else static if(isDelegate!T)
         {
+            version(LDC) static assert(false, "For some reason, delegate support under LDC crashes. See issue: https://github.com/BradleyChatha/lumars/issues/10"); // @suppress(dscanner.style.long_line)
             lua_pushlightuserdata(this.handle, value.ptr);
             lua_pushlightuserdata(this.handle, value.funcptr);
             lua_pushcclosure(this.handle, &luaCWrapperSmart!(T, LuaFuncWrapperType.isDelegate), 2);
