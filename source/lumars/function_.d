@@ -335,6 +335,7 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
  + Example:
  +  `luaState.register!(std.path.buildPath!(string[]))("buildPath")`
  + ++/
+extern(C)
 int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc)(lua_State* state) nothrow
 {
     import std.format : format;
