@@ -75,8 +75,8 @@ struct LuaState
     package bool        _isWrapper;
 
     /// Creates a wrapper around the given `lua_state`, or creates a new state if the given value is null.
-    @trusted @nogc
-    this(lua_State* wrapAround) nothrow
+    @trusted
+    this(lua_State* wrapAround)
     {
         if(wrapAround)
         {
@@ -85,6 +85,8 @@ struct LuaState
         }
         else
         {
+            loadLuaIfNeeded();
+
             this._handle = luaL_newstate();
             luaL_openlibs(this.handle);
         }
@@ -749,6 +751,23 @@ struct LuaState
             assert(this.top >= index, "Index out of bounds");
         else
             assert(this.top + index >= 0, "Index out of bounds");
+    }
+}
+
+private void loadLuaIfNeeded()
+{
+    version(BindLua_Static){}
+    else
+    {
+        const ret = loadLua();
+        if(ret != luaSupport) {
+            if(ret == LuaSupport.noLibrary) 
+                throw new Exception("Lua library not found.");
+            else if(ret == LuaSupport.badLibrary) 
+                throw new Exception("Lua library is corrupt or for a different platform.");
+            else
+                throw new Exception("Lua library is the wrong version, or some unknown error occured.");
+        }
     }
 }
 

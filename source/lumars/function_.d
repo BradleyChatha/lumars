@@ -295,7 +295,11 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
 {
     import std.exception : assumeWontThrow;
     import std.format : format;
-    scope wrapper = LuaState(state);
+    scope LuaState wrapper;
+
+    try wrapper = LuaState(state);
+    catch(Throwable ex) // @suppress(dscanner.suspicious.catch_em_all)
+        return 0;
 
     try
     {
@@ -307,7 +311,7 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
             return 0;
         }
     }
-    catch(Throwable e) // Can't allow any Throwable to execute normally as the backtrace code will crash.
+    catch(Throwable e) // Can't allow any Throwable to execute normally as the backtrace code will crash. // @suppress(dscanner.suspicious.catch_em_all)
     {
         wrapper.error(format!"A D function threw an exception: %s"(e.msg).assumeWontThrow);
         return 0;
