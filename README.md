@@ -20,6 +20,7 @@ that I can add as a unittest, which will also make it easier for me to debug.
     - [Echo](#echo)
     - [Echo (Variadic)](#echo-variadic)
     - [Mapping function](#mapping-function)
+    - [Overloaded functions](#overloaded-functions)
     - [Registering a library](#registering-a-library)
   - [Structs](#structs)
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
