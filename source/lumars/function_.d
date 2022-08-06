@@ -10,6 +10,12 @@ enum LuaFuncWrapperType
     isFunction
 }
 
+struct LuaVariadic 
+{
+    alias array this;
+    LuaValue[] array;
+}
+
 /++
  + Calls a `LuaFunc` or `LuaFuncWeak` in protected mode, which means an exception is thrown
  + if the function produces a LUA error.
@@ -344,32 +350,45 @@ int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.is
 {
     import std.format : format;
     import std.traits : Parameters, ReturnType;
+    import std.meta   : AliasSeq;
 
     return luaCWrapperBasic!((lua)
     {
         alias Params = Parameters!Func;
-        static if(is(Params[0] == LuaState*))
-            const ParamsLength = Params.length-1;
+        static if(Params.length)
+            const ParamsLength =
+                Params.length
+                - (is(Params[0] == LuaState*) ? 1 : 0)
+                - (is(Params[$-1] == LuaVariadic) ? 1 : 0);
         else
             const ParamsLength = Params.length;
+
+        enum HasVariadic = ParamsLength > 0 && is(Params[$-1] == LuaVariadic);
 
         Params params;
 
         const argsGiven = lua.top();
-        if(argsGiven != ParamsLength)
+        if(!HasVariadic && argsGiven != ParamsLength)
             throw new Exception("Expected exactly %s args, but was given %s.".format(ParamsLength, argsGiven));
+        else if(HasVariadic && argsGiven < ParamsLength)
+            throw new Exception("Expected at least %s args, but was given %s.".format(ParamsLength, argsGiven));
         
         static if(is(Params[0] == LuaState*))
         {
             params[0] = lua;
-            static foreach(i; 1..Params.length)
-                params[i] = lua.get!(Params[i])(i);
+            static foreach(i; 0..ParamsLength)
+                params[i+1] = lua.get!(Params[i+1])(i+1);
         }
         else
         {
-            static foreach(i; 0..Params.length)
+            static foreach(i; 0..ParamsLength)
                 params[i] = lua.get!(Params[i])(i+1);
         }
+
+        static if(HasVariadic)
+        foreach(i; 0..argsGiven-ParamsLength)
+            params[$-1] ~= lua.get!LuaValue(cast(int)(i+ParamsLength+1));
+
         alias RetT = ReturnType!Func;
 
         static if(Type == LuaFuncWrapperType.isDelegate)
@@ -527,4 +546,22 @@ unittest
     S s;
     s.bind(lua);
     lua.doString("api.test(200)");
+}
+
+unittest
+{
+    auto lua = new LuaState(null);
+    lua.register("test", &luaCWrapperSmart!((int a, string b, LuaVariadic c){
+        assert(a == 1);
+        assert(b == "2");
+        assert(c.length == 3);
+    }));
+    lua.doString("test(1, '2', 3, true, {})");
+
+    lua.register("test", &luaCWrapperSmart!((LuaState* l, int a, string b, LuaVariadic c){
+        assert(a == 1);
+        assert(b == "2");
+        assert(c.length == 3);
+    }));
+    lua.doString("test(1, '2', 3, true, {})");
 }
