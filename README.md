@@ -201,6 +201,15 @@ auto f = t.get!LuaFunc("echo").bind!(void, string);
 f("Hello, World!");
 ```
 
+### Echo (Variadic)
+
+```d
+auto l = LuaState(null);
+
+l.globalTable["echo"] = (LuaVariadic args) { foreach(arg; args) writeln(arg); };
+l.doString(`echo("Henlo", "Warld!", 420, true)`);
+```
+
 ### Mapping function
 
 ```d

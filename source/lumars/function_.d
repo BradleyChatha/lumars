@@ -363,7 +363,7 @@ int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.is
         else
             const ParamsLength = Params.length;
 
-        enum HasVariadic = ParamsLength > 0 && is(Params[$-1] == LuaVariadic);
+        enum HasVariadic = Params.length > 0 && is(Params[$-1] == LuaVariadic);
 
         Params params;
 
