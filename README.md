@@ -238,6 +238,25 @@ l.doString(`
 `);
 ```
 
+### Overloaded functions
+
+```d
+auto lua = new LuaState(null);
+lua.register!(
+    luaOverloads!(
+        (int a) { assert(a == 1); },
+        (string a) { assert(a == "2"); },
+        (int a, string b) { assert(a == 1); assert(b == "2"); }
+    )
+)("overloaded");
+
+lua.doString(`
+    overloaded(1)
+    overloaded("2")
+    overloaded(1, "2")
+`);
+```
+
 ### Registering a library
 
 You can use the `LuaState.register` function to easily create a Lua table full of functions (a.k.a a Library)

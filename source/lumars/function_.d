@@ -338,6 +338,8 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
  +
  +  `Func` may optionally ask for the lua state by specifying `LuaState*` as its $(B first) parameter.
  +
+ +  `Func` may be made variadic by specifying `LuaVariadic` as its $(B last) parameter.
+ +
  + Params:
  +  Func = The D function to wrap.
  +  Type = User code shouldn't ever need to set this, please leave it as the default.
@@ -348,96 +350,137 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
 extern(C)
 int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc)(lua_State* state) nothrow
 {
+    return luaCWrapperBasic!(
+        luaCWrapperSmartImpl!(Func, Type)
+    )(state);
+}
+
+private int luaCWrapperSmartImpl(
+    alias Func,
+    LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc
+)(
+    LuaState* lua
+)
+{
     import std.format : format;
     import std.traits : Parameters, ReturnType;
     import std.meta   : AliasSeq;
 
-    return luaCWrapperBasic!((lua)
+    alias Params = Parameters!Func;
+    static if(Params.length)
+        const ParamsLength =
+            Params.length
+            - (is(Params[0] == LuaState*) ? 1 : 0)
+            - (is(Params[$-1] == LuaVariadic) ? 1 : 0);
+    else
+        const ParamsLength = Params.length;
+
+    enum HasVariadic = Params.length > 0 && is(Params[$-1] == LuaVariadic);
+
+    Params params;
+
+    const argsGiven = lua.top();
+    if(!HasVariadic && argsGiven != ParamsLength)
+        throw new LuaArgumentException("Expected exactly %s args, but was given %s.".format(ParamsLength, argsGiven));
+    else if(HasVariadic && argsGiven < ParamsLength)
+        throw new LuaArgumentException("Expected at least %s args, but was given %s.".format(ParamsLength, argsGiven));
+    
+    static if(is(Params[0] == LuaState*))
     {
-        alias Params = Parameters!Func;
-        static if(Params.length)
-            const ParamsLength =
-                Params.length
-                - (is(Params[0] == LuaState*) ? 1 : 0)
-                - (is(Params[$-1] == LuaVariadic) ? 1 : 0);
-        else
-            const ParamsLength = Params.length;
+        params[0] = lua;
+        static foreach(i; 0..ParamsLength)
+            params[i+1] = lua.get!(Params[i+1])(i+1);
+    }
+    else
+    {
+        static foreach(i; 0..ParamsLength)
+            params[i] = lua.get!(Params[i])(i+1);
+    }
 
-        enum HasVariadic = Params.length > 0 && is(Params[$-1] == LuaVariadic);
+    static if(HasVariadic)
+    foreach(i; 0..argsGiven-ParamsLength)
+        params[$-1] ~= lua.get!LuaValue(cast(int)(i+ParamsLength+1));
 
-        Params params;
+    alias RetT = ReturnType!Func;
 
-        const argsGiven = lua.top();
-        if(!HasVariadic && argsGiven != ParamsLength)
-            throw new Exception("Expected exactly %s args, but was given %s.".format(ParamsLength, argsGiven));
-        else if(HasVariadic && argsGiven < ParamsLength)
-            throw new Exception("Expected at least %s args, but was given %s.".format(ParamsLength, argsGiven));
+    static if(Type == LuaFuncWrapperType.isDelegate)
+    {
+        alias FuncWithContext = RetT function(Params, void*);
+
+        auto context = lua_touserdata(lua.handle, lua_upvalueindex(1));
+        auto func    = lua_touserdata(lua.handle, lua_upvalueindex(2));
+        auto dFunc   = cast(FuncWithContext)func;
         
-        static if(is(Params[0] == LuaState*))
+        static if(is(RetT == void))
         {
-            params[0] = lua;
-            static foreach(i; 0..ParamsLength)
-                params[i+1] = lua.get!(Params[i+1])(i+1);
+            dFunc(params, context);
+            return 0;
         }
         else
         {
-            static foreach(i; 0..ParamsLength)
-                params[i] = lua.get!(Params[i])(i+1);
+            lua.push(dFunc(params, context));
+            return 1;
         }
-
-        static if(HasVariadic)
-        foreach(i; 0..argsGiven-ParamsLength)
-            params[$-1] ~= lua.get!LuaValue(cast(int)(i+ParamsLength+1));
-
-        alias RetT = ReturnType!Func;
-
-        static if(Type == LuaFuncWrapperType.isDelegate)
+    }
+    else static if(Type == LuaFuncWrapperType.isFunction)
+    {
+        auto func = cast(Func)lua_touserdata(lua.handle, lua_upvalueindex(1));
+        static if(is(RetT == void))
         {
-            alias FuncWithContext = RetT function(Params, void*);
-
-            auto context = lua_touserdata(lua.handle, lua_upvalueindex(1));
-            auto func    = lua_touserdata(lua.handle, lua_upvalueindex(2));
-            auto dFunc   = cast(FuncWithContext)func;
-            
-            static if(is(RetT == void))
-            {
-                dFunc(params, context);
-                return 0;
-            }
-            else
-            {
-                lua.push(dFunc(params, context));
-                return 1;
-            }
-        }
-        else static if(Type == LuaFuncWrapperType.isFunction)
-        {
-            auto func = cast(Func)lua_touserdata(lua.handle, lua_upvalueindex(1));
-            static if(is(RetT == void))
-            {
-                func(params);
-                return 0;
-            }
-            else
-            {
-                lua.push(func(params));
-                return 1;
-            }
+            func(params);
+            return 0;
         }
         else
         {
-            static if(is(RetT == void))
-            {
-                Func(params);
-                return 0;
-            }
-            else
-            {
-                lua.push(Func(params));
-                return 1;
-            }
+            lua.push(func(params));
+            return 1;
         }
-    })(state);
+    }
+    else
+    {
+        static if(is(RetT == void))
+        {
+            Func(params);
+            return 0;
+        }
+        else
+        {
+            lua.push(Func(params));
+            return 1;
+        }
+    }
+}
+
+/++
+ + A function that wraps around other functions in order to provide runtime overloading support.
+ +
+ + Notes:
+ +  Parameter binding logic is exactly the same as `luaCWrapperSmart`.
+ +
+ +  From the 0th `Overload` to the last, this function will exhaustively call each function until one successfully
+ +  has its arguments bound.
+ +
+ +  If no overloads could succesfully be matched, then an exception will be thrown.
+ +
+ +  All overloads must provide the same return type. I hope to make this more flexible in the future.
+ +
+ +  To be more specific, a function fails to bind its arguments if it throws `LuaTypeException` or `LuaArgumentException`.
+ +  So please be aware of this when writing overloads.
+ + ++/
+auto luaOverloads(Overloads...)(LuaState* state, LuaVariadic)
+{
+    static foreach(Overload; Overloads)
+    {{
+        bool compilerThinksThisIsUnreachable = true;
+        if(compilerThinksThisIsUnreachable)
+        {
+            try return luaCWrapperSmartImpl!Overload(state);
+            catch(LuaTypeException) {}
+            catch(LuaArgumentException) {}
+        }
+    }}
+
+    throw new Exception("No overload matched the given arguments.");
 }
 
 unittest
@@ -564,4 +607,21 @@ unittest
         assert(c.length == 3);
     }));
     lua.doString("test(1, '2', 3, true, {})");
+}
+
+unittest
+{
+    auto lua = new LuaState(null);
+    lua.register!(
+        luaOverloads!(
+            (int a) { assert(a == 1); },
+            (string a) { assert(a == "2"); },
+            (int a, string b) { assert(a == 1); assert(b == "2"); }
+        )
+    )("overloaded");
+    lua.doString(`
+        overloaded(1)
+        overloaded("2")
+        overloaded(1, "2")
+    `);
 }

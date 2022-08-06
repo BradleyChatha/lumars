@@ -346,7 +346,7 @@ struct LuaState
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
     }
 
@@ -357,20 +357,20 @@ struct LuaState
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
 
         table.push();
         const fenvResult = lua_setfenv(this.handle, -2);
         if(fenvResult == 0)
-            throw new Exception("Failed to set function environment");
+            throw new LuaException("Failed to set function environment");
 
         const callStatus = lua_pcall(this.handle, 0, 0, 0);
         if(callStatus != LuaStatus.ok)
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
     }
 
@@ -381,7 +381,7 @@ struct LuaState
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
     }
 
@@ -392,20 +392,20 @@ struct LuaState
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
 
         table.push();
         const fenvResult = lua_setfenv(this.handle, -2);
         if(fenvResult == 0)
-            throw new Exception("Failed to set function environment");
+            throw new LuaException("Failed to set function environment");
 
         const callStatus = lua_pcall(this.handle, 0, 0, 0);
         if(callStatus != LuaStatus.ok)
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
     }
 
@@ -416,7 +416,7 @@ struct LuaState
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
     }
 
@@ -427,7 +427,7 @@ struct LuaState
         {
             const error = this.get!string(-1);
             this.pop(1);
-            throw new Exception(error);
+            throw new LuaException(error);
         }
     }
 
@@ -667,7 +667,7 @@ struct LuaState
                 case LuaValue.Kind.table: return LuaValue(this.get!LuaTable(index));
                 case LuaValue.Kind.func: return LuaValue(this.get!LuaFunc(index));
                 case LuaValue.Kind.userData: return LuaValue(this.get!(void*)(index));
-                default: throw new Exception("Don't know how to convert type into a LuaValue: "~this.type(index).to!string);
+                default: throw new LuaException("Don't know how to convert type into a LuaValue: "~this.type(index).to!string);
             }
         }
         else static if(is(T == struct))
@@ -710,7 +710,7 @@ struct LuaState
         import std.exception : enforce;
         import std.format    : format;
         const type = this.type(index);
-        enforce(type == expected, "Expected value at stack index %s to be of type %s but it is %s".format(
+        enforce!LuaTypeException(type == expected, "Expected value at stack index %s to be of type %s but it is %s".format(
             index, expected, type
         ));
     }
@@ -761,13 +761,27 @@ private void loadLuaIfNeeded()
         const ret = loadLua();
         if(ret != luaSupport) {
             if(ret == LuaSupport.noLibrary) 
-                throw new Exception("Lua library not found.");
+                throw new LuaException("Lua library not found.");
             else if(ret == LuaSupport.badLibrary) 
-                throw new Exception("Lua library is corrupt or for a different platform.");
+                throw new LuaException("Lua library is corrupt or for a different platform.");
             else
-                throw new Exception("Lua library is the wrong version, or some unknown error occured.");
+                throw new LuaException("Lua library is the wrong version, or some unknown error occured.");
         }
     }
+}
+
+import std.exception : basicExceptionCtors;
+class LuaException : Exception
+{
+    mixin basicExceptionCtors;
+}
+class LuaTypeException : LuaException
+{
+    mixin basicExceptionCtors;
+}
+class LuaArgumentException : LuaException
+{
+    mixin basicExceptionCtors;
 }
 
 unittest
