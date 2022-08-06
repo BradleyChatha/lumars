@@ -18,6 +18,7 @@ that I can add as a unittest, which will also make it easier for me to debug.
     - [Array conversion](#array-conversion)
   - [Functions](#functions)
     - [Echo](#echo)
+    - [Echo (Variadic)](#echo-variadic)
     - [Mapping function](#mapping-function)
     - [Registering a library](#registering-a-library)
   - [Structs](#structs)
