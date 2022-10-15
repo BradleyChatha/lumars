@@ -10,6 +10,7 @@ configuration "lua51" {
 	dflags "-L$PACKAGE_DIR/deps/linux64/lua51.a" platform="linux-x86_64"
 	dflags "-L$PACKAGE_DIR/deps/win64/lua51.lib" platform="windows-x86_64"
 	dflags "-L$PACKAGE_DIR/deps/macamd/lua51.a" platform="osx-aarch64"
+	dflags "-L$PACKAGE_DIR/deps/macx64/lua51.a" platform="osx-x86_64"
 	versions "BindLua_Static" "LUA_51"
     subConfiguration "bindbc-lua" "static"
 }
@@ -17,5 +18,6 @@ configuration "lua51-dynamic" {
 	targetType "library"
 	copyFiles "$PACKAGE_DIR/deps/win64/lua51.dll" platform="windows-x86_64"
 	copyFiles "$PACKAGE_DIR/deps/macamd/liblua.5.1.dylib" platform="osx-aarch64"
+	copyFiles "$PACKAGE_DIR/deps/macx64/liblua.5.1.dylib" platform="osx-x86_64"
 	versions "LUA_51"
 }
