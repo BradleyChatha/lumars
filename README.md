@@ -546,7 +546,7 @@ Then simply `require("api.lua")` in your lua code, et voila (hopefully).
 
 # Projects
 
-- [Inochi-Session](https://github.com/Inochi2D/inochi-session): A tool used to do live streaming with Inochi2D puppets, uses Lumars for plugins.
+- [Inochi Session](https://github.com/Inochi2D/inochi-session): A tool used to do live streaming with Inochi2D puppets, uses Lumars for plugins and expression bindings.
 
 # Contributing
 
