@@ -2,8 +2,10 @@
 
 Lumars is a high-level wrapper around LUA 5.1 that aims to be lightweight while providing high quality of life features.
 
-This library is in its early stages, so **expect bugs**. If you can be bothered, please open an issue alongside a minimised, idependent snippet of code
+This library has been in use for a while, and is _relatively_ stable. If you can be bothered, please open an issue alongside a minimised, idependent snippet of code
 that I can add as a unittest, which will also make it easier for me to debug.
+
+Also if you're using this library for a project, consider adding it (or asking me to add it) to the [Projects](#projects) section.
 
 - [Overview](#overview)
 - [Features](#features)
@@ -28,21 +30,24 @@ that I can add as a unittest, which will also make it easier for me to debug.
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
   - [nogc strings](#nogc-strings)
   - [EmmyLua Annotations (IDE autocomplete)](#emmylua-annotations-ide-autocomplete)
+- [Projects](#projects)
 - [Contributing](#contributing)
 
 # Features
 
 - Statically linked
-- Bundled with prebuilt binaries for LuaJit for Windows and Posix
+- Bundled with prebuilt binaries for LuaJit for Windows, Linux, and MacOS (including Apple Silicon)
 - Dynamic values using TaggedAlgebraic
 - Ability to convert most D and Lua types to eachother (including structs)
 - Provides a high level interface, but also allows manual manipulation of the stack
 - Uses a struct-based API instead of classes, to minimise GC usage
   - Some types use ref counting in order to be easy to move around while still keeping lifetime guarentees
 - Doesn't shy away from the GC, but does try to minimise usage of it
+  - For example, if you don't mind managing the lifetime of a Lua stack variable, you can use `const(char)[]` instead of `string` to avoid copying strings onto the GC.
 - Supports Lua 5.1 (mainly for LuaJit)
 - Bind Lua functions to statically typed D functions
 - Lambdas, functions, and delegates can all be exposed to Lua
+- Utilities to generated EmmyLua-notated lua files for IDE autocomplete
 
 # Quick Start
 
@@ -538,6 +543,10 @@ void registerFuncs(LuaState* lua)
 ```
 
 Then simply `require("api.lua")` in your lua code, et voila (hopefully).
+
+# Projects
+
+- [Inochi-Session](https://github.com/Inochi2D/inochi-session): A tool used to do live streaming with Inochi2D puppets, uses Lumars for plugins.
 
 # Contributing
 
