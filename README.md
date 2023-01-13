@@ -22,7 +22,7 @@ that I can add as a unittest, which will also make it easier for me to debug.
     - [Mapping function](#mapping-function)
     - [Overloaded functions](#overloaded-functions)
     - [Returning multiple values (statically)](#returning-multiple-values-statically)
-    - [Returning multiple values (dynmaically)](#returning-multiple-values-dynamically)
+    - [Returning multiple values (dynamically)](#returning-multiple-values-dynamically)
     - [Registering a library](#registering-a-library)
   - [Structs](#structs)
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
@@ -280,7 +280,7 @@ lua.doString(`
 `);
 ```
 
-### Returning multiple values (dynamically)
+### Returning multiple values (dynamically)
 
 A way of returning multiple values in a dynamically typed way, is to use `LuaVariadic` as your return value:
 
