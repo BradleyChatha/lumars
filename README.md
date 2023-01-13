@@ -21,6 +21,8 @@ that I can add as a unittest, which will also make it easier for me to debug.
     - [Echo (Variadic)](#echo-variadic)
     - [Mapping function](#mapping-function)
     - [Overloaded functions](#overloaded-functions)
+    - [Returning multiple values (statically)](#returning-multiple-values-statically)
+    - [Returning multiple values (dynmaically)](#returning-multiple-values-dynamically)
     - [Registering a library](#registering-a-library)
   - [Structs](#structs)
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
@@ -255,6 +257,46 @@ lua.doString(`
     overloaded(1)
     overloaded("2")
     overloaded(1, "2")
+`);
+```
+
+### Returning multiple values (statically)
+
+A way of returning multiple values in a statically typed way, is to use `LuaMultiReturn` as your return value:
+
+```d
+LuaMultiReturn!(int, string, bool) multiReturn()
+{
+    return typeof(return)(20, "40", true);
+}
+
+auto lua = new LuaState(null);
+lua.register!multiReturn("multiReturn");
+lua.doString(`
+    local i, s, b = multiReturn()
+    assert(i == 20)
+    assert(s == "40")
+    assert(b)
+`);
+```
+
+### Returning multiple values (dynamically)
+
+A way of returning multiple values in a dynamically typed way, is to use `LuaVariadic` as your return value:
+
+```d
+LuaVariadic multiReturn()
+{
+    return LuaVariadic([LuaValue(20), LuaValue("40"), LuaValue(true)]);
+}
+
+auto lua = new LuaState(null);
+lua.register!multiReturn("multiReturn");
+lua.doString(`
+    local i, s, b = multiReturn()
+    assert(i == 20)
+    assert(s == "40")
+    assert(b)
 `);
 ```
 

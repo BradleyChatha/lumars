@@ -16,6 +16,18 @@ struct LuaVariadic
     LuaValue[] array;
 }
 
+struct LuaMultiReturn(T...)
+{
+    alias ValueTuple = T;
+    alias values this;
+    T values;
+
+    this()(T values)
+    {
+        this.values = values;
+    }
+}
+
 /++
  + Calls a `LuaFunc` or `LuaFuncWeak` in protected mode, which means an exception is thrown
  + if the function produces a LUA error.
@@ -363,7 +375,7 @@ private int luaCWrapperSmartImpl(
 )
 {
     import std.format : format;
-    import std.traits : Parameters, ReturnType;
+    import std.traits : Parameters, ReturnType, isInstanceOf;
     import std.meta   : AliasSeq;
 
     alias Params = Parameters!Func;
@@ -373,7 +385,7 @@ private int luaCWrapperSmartImpl(
             - (is(Params[0] == LuaState*) ? 1 : 0)
             - (is(Params[$-1] == LuaVariadic) ? 1 : 0);
     else
-        const ParamsLength = Params.length;
+        const ParamsLength = 0;
 
     enum HasVariadic = Params.length > 0 && is(Params[$-1] == LuaVariadic);
 
@@ -416,6 +428,20 @@ private int luaCWrapperSmartImpl(
             dFunc(params, context);
             return 0;
         }
+        else static if(isInstanceOf!(LuaMultiReturn, RetT))
+        {
+            auto multiRet = dFunc(params, context);
+            static foreach(i; 0..multiRet.ValueTuple.length)
+                lua.push(multiRet[i]);
+            return multiRet.ValueTuple.length;
+        }
+        else static if(is(RetT == LuaVariadic))
+        {
+            auto multiRet = dFunc(params, context);
+            foreach(value; multiRet)
+                lua.push(value);
+            return cast(int)multiRet.length;
+        }
         else
         {
             lua.push(dFunc(params, context));
@@ -430,6 +456,20 @@ private int luaCWrapperSmartImpl(
             func(params);
             return 0;
         }
+        else static if(isInstanceOf!(LuaMultiReturn, RetT))
+        {
+            auto multiRet = func(params);
+            static foreach(i; 0..multiRet.ValueTuple.length)
+                lua.push(multiRet[i]);
+            return multiRet.ValueTuple.length;
+        }
+        else static if(is(RetT == LuaVariadic))
+        {
+            auto multiRet = func(params);
+            foreach(value; multiRet)
+                lua.push(value);
+            return cast(int)multiRet.length;
+        }
         else
         {
             lua.push(func(params));
@@ -442,6 +482,20 @@ private int luaCWrapperSmartImpl(
         {
             Func(params);
             return 0;
+        }
+        else static if(isInstanceOf!(LuaMultiReturn, RetT))
+        {
+            auto multiRet = Func(params);
+            static foreach(i; 0..multiRet.ValueTuple.length)
+                lua.push(multiRet[i]);
+            return multiRet.ValueTuple.length;
+        }
+        else static if(is(RetT == LuaVariadic))
+        {
+            auto multiRet = Func(params);
+            foreach(value; multiRet)
+                lua.push(value);
+            return cast(int)multiRet.length;
         }
         else
         {
@@ -623,5 +677,39 @@ unittest
         overloaded(1)
         overloaded("2")
         overloaded(1, "2")
+    `);
+}
+
+unittest
+{
+    static LuaMultiReturn!(int, string, bool) multiReturn()
+    {
+        return typeof(return)(20, "40", true);
+    }
+
+    auto lua = new LuaState(null);
+    lua.register!multiReturn("multiReturn");
+    lua.doString(`
+        local i, s, b = multiReturn()
+        assert(i == 20)
+        assert(s == "40")
+        assert(b)
+    `);
+}
+
+unittest
+{
+    static LuaVariadic multiReturn()
+    {
+        return LuaVariadic([LuaValue(20), LuaValue("40"), LuaValue(true)]);
+    }
+
+    auto lua = new LuaState(null);
+    lua.register!multiReturn("multiReturn");
+    lua.doString(`
+        local i, s, b = multiReturn()
+        assert(i == 20)
+        assert(s == "40")
+        assert(b)
     `);
 }
