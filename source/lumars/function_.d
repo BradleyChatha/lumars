@@ -350,8 +350,22 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
     }
     catch(Throwable e) // Can't allow any Throwable to execute normally as the backtrace code will crash. // @suppress(dscanner.suspicious.catch_em_all)
     {
-        wrapper.error(format!"A D function threw an exception: %s"(e.msg).assumeWontThrow);
-        return 0;
+        try
+        {
+            wrapper.push(e.msg);
+            wrapper.traceback();
+
+            const str = wrapper.get!string(-1).assumeWontThrow;
+            wrapper.pop(1);
+
+            wrapper.error(str);
+            return 0;
+        }
+        catch(Throwable e2) // @suppress(dscanner.suspicious.catch_em_all)
+        {
+            wrapper.error(e.msg~"\n[WARN] Traceback code failed: "~e2.msg);
+            return 0;
+        }
     }
 }
 
@@ -794,4 +808,21 @@ unittest
         a,b = basic(1, "2")
         assert(a == 1 and b == "2")
     `);
+}
+
+unittest
+{
+    import std.algorithm : canFind;
+    import std.exception : collectExceptionMsg;
+
+    auto lua = LuaState(null);
+    
+    static void err()
+    {
+        throw new Exception("err");
+    }
+    lua.register!err("err");
+
+    const msg = lua.doString(`err()`).collectExceptionMsg;
+    assert(msg.canFind("stack traceback:"));
 }

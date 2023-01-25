@@ -365,6 +365,42 @@ struct LuaState
         luaL_checktype(this.handle, arg, t);
     }
 
+    @nogc
+    bool isType(T)(int index) nothrow
+    {
+        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType;
+
+        static if(is(T == string))
+            return this.type(index) == LuaValue.Kind.text;
+        else static if(is(T == const(char)[]))
+            return this.type(index) == LuaValue.Kind.text;
+        else static if(is(T : const(bool)))
+            return this.type(index) == LuaValue.Kind.boolean;
+        else static if(isNumeric!T)
+            return this.type(index) == LuaValue.Kind.number;
+        else static if(is(T == typeof(null)) || is(T == LuaNil))
+            return this.type(index) == LuaValue.Kind.nil;
+        else static if(is(T == LuaTableWeak))
+            return this.type(index) == LuaValue.Kind.table;
+        else static if(is(T == LuaTable))
+            return this.type(index) == LuaValue.Kind.table;
+        else static if(isDynamicArray!T)
+            return this.type(index) == LuaValue.Kind.table;
+        else static if(isAssociativeArray!T)
+            return this.type(index) == LuaValue.Kind.table;
+        else static if(is(T == LuaCFunc))
+            return this.type(index) == LuaValue.Kind.func;
+        else static if(is(T == LuaFuncWeak))
+            return this.type(index) == LuaValue.Kind.func;
+        else static if(is(T == LuaFunc))
+            return this.type(index) == LuaValue.Kind.func;
+        else static if(isPointer!T || is(T == class))
+            return this.type(index) == LuaValue.Kind.userData;
+        else static if(is(T == struct))
+            return this.type(index) == LuaValue.Kind.table;
+        else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
+    }
+
     void doFile(const char[] file)
     {
         const status = luaL_dofile(this.handle, file.toStringz);
@@ -761,6 +797,45 @@ struct LuaState
             default: 
                 return LuaValue.Kind.nil;
         }
+    }
+
+    /++
+     + Attempts to call `debug.traceback`. A string is expected to be on top of the stack,
+     + otherwise the function will abort the attempt.
+     +
+     + Otherwise, the string on top of the stack is consumed and a new string will be pushed containing
+     + the traceback (if possible).
+     +
+     + Args:
+     +  level = Same as the `level` parameter for `debug.traceback`. Essentially, how many functions to not include in the traceback
+     + ++/
+    void traceback(int level = 2)
+    {
+        if(!this.isType!string(-1))
+            return;
+
+        const str = this.get!string(-1);
+        this.pop(1);
+
+        bool found;
+        auto debugTable = this.globalTable.tryGet!LuaTable("debug", found);
+        if(!found)
+        {
+            this.push(str~"\n"~"[Could not produce traceback: `debug` does not exist in _G table]");
+            return;
+        }
+
+        auto tracebackFunc = debugTable.tryGet!LuaFunc("traceback", found);
+        if(!found)
+        {
+            this.push(str~"\n"~"[Could not produce traceback: `traceback` does not exist in `debug` table]");
+            return;
+        }
+
+        this.push(tracebackFunc);
+        this.push(str);
+        this.push(level);
+        this.call(2, 1);
     }
 
     @property @safe @nogc

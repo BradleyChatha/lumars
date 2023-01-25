@@ -129,8 +129,44 @@ template pairs(KeyT, ValueT, alias Func)
     }
 }
 
-private mixin template LuaTableFuncs()
+private mixin template LuaTableFuncs(bool isPseudo)
 {
+    T tryGet(T, IndexT)(IndexT index, out bool result)
+    if(isNumeric!IndexT || is(IndexT == string))
+    {
+        static assert(
+            !is(IndexT == LuaTableWeak)
+        &&  !is(IndexT == LuaFuncWeak)
+        &&  !is(IndexT == const(char)[]),
+            "Can't use weak references with `get` as this function does not keep the value alive on the stack."
+        );
+
+        static if(!isPseudo)
+        {
+            const meIndex = this.push();
+            scope(exit) this.pop();
+            const tableIndex = meIndex < 0 ? meIndex - 1 : meIndex;
+        }
+        else
+            const tableIndex = this._index;
+        
+        this.lua.push(index);
+        lua_gettable(this.lua.handle, tableIndex);
+        result = this.lua.isType!T(-1);
+
+        if(!result)
+        {
+            this.lua.pop(1);
+            return T.init;
+        }
+        else
+        {
+            auto value = this.lua.get!T(-1);
+            this.lua.pop(1);
+            return value;
+        }
+    }
+    
     T get(T, IndexT)(IndexT index)
     if(isNumeric!IndexT || is(IndexT == string))
     {
@@ -141,11 +177,17 @@ private mixin template LuaTableFuncs()
             "Can't use weak references with `get` as this function does not keep the value alive on the stack."
         );
 
-        const meIndex = this.push();
-        scope(exit) this.pop();
+        static if(!isPseudo)
+        {
+            const meIndex = this.push();
+            scope(exit) this.pop();
+            const tableIndex = meIndex < 0 ? meIndex - 1 : meIndex;
+        }
+        else
+            const tableIndex = this._index;
         
         this.lua.push(index);
-        lua_gettable(this.lua.handle, meIndex < 0 ? meIndex - 1 : meIndex);
+        lua_gettable(this.lua.handle, tableIndex);
         auto value = this.lua.get!T(-1);
         this.lua.pop(1);
         return value;
@@ -154,21 +196,33 @@ private mixin template LuaTableFuncs()
     void set(T, IndexT)(IndexT index, T value)
     if(isNumeric!IndexT || is(IndexT == string))
     {
-        const meIndex = this.push();
-        scope(exit) this.pop();
+        static if(!isPseudo)
+        {
+            const meIndex = this.push();
+            scope(exit) this.pop();
+            const tableIndex = meIndex < 0 ? meIndex - 2 : meIndex;
+        }
+        else
+            const tableIndex = this._index;
         
         this.lua.push(index);
         this.lua.push(value);
-        lua_settable(this.lua.handle, meIndex < 0 ? meIndex - 2 : meIndex);
+        lua_settable(this.lua.handle, tableIndex);
     }
 
     void setMetatable(LuaTable metatable)
     {
-        const meIndex = this.push();
-        scope(exit) this.pop();
+        static if(!isPseudo)
+        {
+            const meIndex = this.push();
+            scope(exit) this.pop();
+            const tableIndex = meIndex < 0 ? meIndex - 1 : meIndex;
+        }
+        else
+            const tableIndex = this._index;
 
         metatable.push();
-        lua_setmetatable(this.lua.handle, meIndex);
+        lua_setmetatable(this.lua.handle, tableIndex);
     }
 
     void opIndexAssign(T, IndexT)(T value, IndexT index)
@@ -178,8 +232,13 @@ private mixin template LuaTableFuncs()
 
     size_t length()
     {
-        const index = this.push();
-        scope(exit) this.pop();
+        static if(!isPseudo)
+        {
+            const index = this.push();
+            scope(exit) this.pop();
+        }
+        else
+            const index = this._index;
 
         return lua_objlen(this.lua.handle, index);
     }
@@ -187,6 +246,8 @@ private mixin template LuaTableFuncs()
 
 struct LuaTablePseudo
 {
+    mixin LuaTableFuncs!true;
+
     private
     {
         LuaState* _lua;
@@ -207,36 +268,6 @@ struct LuaTablePseudo
         lua_gettable(this.lua.handle, this._index);
     }
 
-    T get(T, IndexT)(IndexT index)
-    if(isNumeric!IndexT || is(IndexT == string))
-    {
-        static assert(
-            !is(IndexT == LuaTableWeak)
-        &&  !is(IndexT == LuaFuncWeak)
-        &&  !is(IndexT == const(char)[]),
-            "Can't use weak references with `get` as this function does not keep the value alive on the stack."
-        );
-
-        this.lua.push(index);
-        lua_gettable(this.lua.handle, this._index);
-        auto value = this.lua.get!T(-1);
-        this.lua.pop(1);
-        return value;
-    }
-
-    void set(T, IndexT)(IndexT index, T value)
-    if(isNumeric!IndexT || is(IndexT == string))
-    {        
-        this.lua.push(index);
-        this.lua.push(value);
-        lua_settable(this.lua.handle, this._index);
-    }
-
-    void opIndexAssign(T, IndexT)(T value, IndexT index)
-    {
-        this.set(index, value);
-    }
-
     @property @safe @nogc
     LuaState* lua() nothrow pure
     {
@@ -246,7 +277,7 @@ struct LuaTablePseudo
 
 struct LuaTableWeak 
 {
-    mixin LuaTableFuncs;
+    mixin LuaTableFuncs!false;
 
     private
     {
@@ -291,7 +322,7 @@ struct LuaTable
     import std.range : isInputRange;
     import std.traits : isAssociativeArray;
     import std.typecons : RefCounted;
-    mixin LuaTableFuncs;
+    mixin LuaTableFuncs!false;
 
     private
     {
