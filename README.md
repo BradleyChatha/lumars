@@ -26,6 +26,7 @@ Also if you're using this library for a project, consider adding it (or asking m
     - [Returning multiple values (statically)](#returning-multiple-values-statically)
     - [Returning multiple values (dynamically)](#returning-multiple-values-dynamically)
     - [Registering a library](#registering-a-library)
+    - [Basic Functions](#basic-functions)
   - [Structs](#structs)
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
   - [nogc strings](#nogc-strings)
@@ -392,6 +393,33 @@ void registerFsApi(LuaState* lua)
         },
     )("sh.fs");
 }
+```
+
+### Basic Functions
+
+While Lumars provides a nice, user-friendly way to interface D and Lua functions together; sometimes you need to write
+a function that needs to manually manipulate the Lua stack in order to do its job.
+
+These are referred to as "Basic" functions, since they don't need any of the fancy wrapper logic given by default.
+
+To create a basic function, simply annotate the function with `@LuaBasicFunction`:
+
+```d
+auto lua = LuaState(null);
+
+@LuaBasicFunction
+int basic(LuaState* lua)
+{
+    return lua.top(); // lua.top will be the amount of parameters we have. So return all params.
+}
+lua.register!basic("basic");
+
+lua.doString(`
+    assert(basic(1) == 1)
+
+    a,b = basic(1, "2")
+    assert(a == 1 and b == "2")
+`);
 ```
 
 ## Structs

@@ -178,8 +178,10 @@ unittest
         "readln", () { return ""; }
     )("sh");
 
-    import std.stdio : writeln;
-    writeln(b.toString());
+    // TODO: This needs better testing.
+
+    // import std.stdio : writeln;
+    // writeln(b.toString());
 }
 
 template addFunction(alias Func) // Have to do this otherwise I get the fucking crappy-ass "dual-context" error.

@@ -3,6 +3,7 @@ module lumars.function_;
 
 import bindbc.lua, lumars;
 
+// Mostly for internal use - controls how luaCWrapperSmart calls the underlying D function.
 enum LuaFuncWrapperType
 {
     isAliasFunc,
@@ -10,12 +11,19 @@ enum LuaFuncWrapperType
     isFunction
 }
 
+/++
+ + When used as the _last_ parameter of a function: Allows the function to capture any amount of additional arguments
+ + passed in from Lua.
+ +
+ + When used as the return type of a function: Allows the function to return a dynamic amount of values to Lua.
+ + ++/
 struct LuaVariadic 
 {
     alias array this;
     LuaValue[] array;
 }
 
+// (replacing with Tuple soon, not documenting)
 struct LuaMultiReturn(T...)
 {
     alias ValueTuple = T;
@@ -27,6 +35,16 @@ struct LuaMultiReturn(T...)
         this.values = values;
     }
 }
+
+/++
+ + See: `luaCWrapperSmart`
+ +
+ + In essence though, marking a function with this UDA means that the function wants to take
+ + full control of interfacing with Lua, instead of having `luaCWrapperSmart` do all the heavy lifting.
+ +
+ + This is needed in some specific cases, such as `luaOverloads`.
+ + ++/
+struct LuaBasicFunction{}
 
 /++
  + Calls a `LuaFunc` or `LuaFuncWeak` in protected mode, which means an exception is thrown
@@ -309,6 +327,7 @@ struct LuaFunc
  +  Func = The D function to wrap. This function must take a `LuaState*` as its only parameter, and it can optionally return an int
  +         to signify how many values it has returned.
  + ++/
+extern(C)
 int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
 {
     import std.exception : assumeWontThrow;
@@ -352,6 +371,11 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
  +
  +  `Func` may be made variadic by specifying `LuaVariadic` as its $(B last) parameter.
  +
+ +   If `Func` is annotated with `@LuaBasicFunction`, then this function actually acts the same as
+ +   `luaCWrapperBasic`. The reason for this is so that we don't have to have a bunch of conditional
+ +   logic in the other parts of the code to select between the two wrappers, but instead we can just put the conditional logic
+ +   here to seamlessly support this usecase throughout the code.
+ +
  + Params:
  +  Func = The D function to wrap.
  +  Type = User code shouldn't ever need to set this, please leave it as the default.
@@ -362,9 +386,21 @@ int luaCWrapperBasic(alias Func)(lua_State* state) nothrow
 extern(C)
 int luaCWrapperSmart(alias Func, LuaFuncWrapperType Type = LuaFuncWrapperType.isAliasFunc)(lua_State* state) nothrow
 {
-    return luaCWrapperBasic!(
-        luaCWrapperSmartImpl!(Func, Type)
-    )(state);
+    import std.traits : getUDAs;
+
+    static if(__traits(compiles, getUDAs!(Func, LuaBasicFunction)))
+        enum IsBasicFunction = getUDAs!(Func, LuaBasicFunction).length > 0;
+    else
+        enum IsBasicFunction = false;
+
+    static if(IsBasicFunction)
+        return luaCWrapperBasic!Func(state);
+    else
+    {
+        return luaCWrapperBasic!(
+            luaCWrapperSmartImpl!(Func, Type)
+        )(state);
+    }
 }
 
 private int luaCWrapperSmartImpl(
@@ -521,13 +557,15 @@ private int luaCWrapperSmartImpl(
  +  To be more specific, a function fails to bind its arguments if it throws `LuaTypeException` or `LuaArgumentException`.
  +  So please be aware of this when writing overloads.
  + ++/
-auto luaOverloads(Overloads...)(LuaState* state, LuaVariadic)
+@LuaBasicFunction
+int luaOverloads(Overloads...)(LuaState* state)
 {
     static foreach(Overload; Overloads)
     {{
         bool compilerThinksThisIsUnreachable = true;
         if(compilerThinksThisIsUnreachable)
         {
+            // TODO: This needs a much better mechanism, this is super dodgy.
             try return luaCWrapperSmartImpl!Overload(state);
             catch(LuaTypeException) {}
             catch(LuaArgumentException) {}
@@ -668,15 +706,17 @@ unittest
     auto lua = new LuaState(null);
     lua.register!(
         luaOverloads!(
-            (int a) { assert(a == 1); },
-            (string a) { assert(a == "2"); },
-            (int a, string b) { assert(a == 1); assert(b == "2"); }
+            (int a) { assert(a == 1); return a; },
+            (string a) { assert(a == "2"); return a; },
+            (int a, string b) { assert(a == 1); assert(b == "2"); return LuaMultiReturn!(int, string)(a, b); }
         )
     )("overloaded");
     lua.doString(`
-        overloaded(1)
-        overloaded("2")
-        overloaded(1, "2")
+        assert(overloaded(1) == 1)
+        assert(overloaded("2") == "2")
+        a,b = overloaded(1, "2")
+        assert(a == 1)
+        assert(b == "2")
     `);
 }
 
@@ -711,5 +751,47 @@ unittest
         assert(i == 20)
         assert(s == "40")
         assert(b)
+    `);
+}
+
+unittest
+{
+    auto lua = new LuaState(null);
+    lua.register!(
+        "normal", (){ return 1; },
+        "overloaded", luaOverloads!(
+            (int a) { assert(a == 1); return a; },
+            (string a) { assert(a == "2"); return a; },
+            (int a, string b) { assert(a == 1); assert(b == "2"); return LuaMultiReturn!(int, string)(a, b); }
+        )
+    )("lib");
+
+    lua.doString(`
+        assert(lib.normal() == 1)
+
+        assert(lib.overloaded(1) == 1)
+        assert(lib.overloaded("2") == "2")
+        a,b = lib.overloaded(1, "2")
+        assert(a == 1)
+        assert(b == "2")
+    `);
+}
+
+unittest
+{
+    auto lua = LuaState(null);
+    
+    @LuaBasicFunction
+    static int basic(LuaState* lua)
+    {
+        return lua.top(); // lua.top will be the amount of parameters we have. So return all params.
+    }
+    lua.register!basic("basic");
+
+    lua.doString(`
+        assert(basic(1) == 1)
+
+        a,b = basic(1, "2")
+        assert(a == 1 and b == "2")
     `);
 }

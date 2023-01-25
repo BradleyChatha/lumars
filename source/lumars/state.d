@@ -242,14 +242,40 @@ struct LuaState
         lua_register(this.handle, name.toStringz, func);
     }
 
+    /++
+     + Registers the given D function into Lua, under a specific name within the global table.
+     +
+     + `Func` can be any normal D function. By default it is wrapped using `luaCWrapperSmart`
+     + to allow a (mostly) seamless way of interfacing D and Lua together. Please see `luaCWrapperSmart`'s
+     + documentation if you'd like to learn more.
+     +
+     + Params:
+     +  Func = The function to wrap.
+     +  name = The name to register the function under.
+     + ++/
     void register(alias Func)(const char[] name)
     {
         this.register(name, &luaCWrapperSmart!Func);
     }
 
+    /++
+     + Similar to the other register functions, except this one will register the functions
+     + into a single table, before registering the resulting table into the global table.
+     +
+     + In other words: If you want to make a "library" table then this is the function for you.
+     +
+     + `Args` must have an even number of elements, where each two elements are a pair.
+     +
+     + For each pair in `Args`, the first element is the name to register the function under, and
+     + the last element is the function itself to register.
+     +
+     + For example, if you did: `register!("a", (){}, "b", (){})("library")`, then the result is
+     + a global table called "library" with the functions "a" and "b" (e.g. `library.a()`).
+     + ++/
     void register(Args...)(const char[] libname)
     if(Args.length % 2 == 0)
     {
+        import std.traits : getUDAs;
         luaL_Reg[(Args.length / 2) + 1] reg;
 
         static foreach(i; 0..Args.length/2)
