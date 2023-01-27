@@ -27,6 +27,7 @@ Also if you're using this library for a project, consider adding it (or asking m
     - [Returning multiple values (dynamically)](#returning-multiple-values-dynamically)
     - [Registering a library](#registering-a-library)
     - [Basic Functions](#basic-functions)
+    - [Default parameters](#default-parameters)
   - [Structs](#structs)
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
   - [nogc strings](#nogc-strings)
