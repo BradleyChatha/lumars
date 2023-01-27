@@ -850,12 +850,41 @@ unittest
 {
     auto lua = new LuaState(null);
     lua.register!(
-        "defaultParams", (int a, int b = 1, int c = 2) { return a+b+c;}
+        "defaultParams", (int a, int b = 1, int c = 2) { return a+b+c; }
     )("lib");
 
     lua.doString(`
         assert(lib.defaultParams(1) == 4)
         assert(lib.defaultParams(1, 2) == 5)
         assert(lib.defaultParams(1, 3, 5) == 9)
+    `);
+}
+
+unittest
+{
+    auto lua = new LuaState(null);
+    lua.register!(
+        "p0", () { },
+        "p1", (int a) { },
+        "p1o1", (int a, int b = 0) { },
+        "o1", (int a = 0) { },
+    )("lib");
+
+    lua.doString(`
+        assert(pcall(lib.p0))
+        assert(not pcall(lib.p0, 1))
+
+        assert(not pcall(lib.p1))
+        assert(pcall(lib.p1, 1))
+        assert(not pcall(lib.p1, 1, 2))
+
+        assert(not pcall(lib.p1o1))
+        assert(pcall(lib.p1o1, 1))
+        assert(pcall(lib.p1o1, 1, 2))
+        assert(not pcall(lib.p1o1, 1, 2, 3))
+
+        assert(pcall(lib.o1))
+        assert(pcall(lib.o1, 1))
+        assert(not pcall(lib.o1, 1, 2))
     `);
 }

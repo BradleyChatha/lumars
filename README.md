@@ -422,6 +422,25 @@ lua.doString(`
 `);
 ```
 
+### Default parameters
+
+Lumars supports functions with default parameters. Simply... use them just like you would normally:
+
+(Feature contribued by @Domain)
+
+```d
+auto lua = new LuaState(null);
+lua.register!(
+    "defaultParams", (int a, int b = 1, int c = 2) { return a+b+c; }
+)("lib");
+
+lua.doString(`
+    assert(lib.defaultParams(1) == 4)
+    assert(lib.defaultParams(1, 2) == 5)
+    assert(lib.defaultParams(1, 3, 5) == 9)
+`);
+```
+
 ## Structs
 
 Lumars can convert D structs to and from Lua.
