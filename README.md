@@ -423,7 +423,7 @@ lua.doString(`
 `);
 ```
 
-### Default parameters
+### Default parameters
 
 Lumars supports functions with default parameters. Simply... use them just like you would normally:
 
