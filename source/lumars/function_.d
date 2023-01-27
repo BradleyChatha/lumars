@@ -425,43 +425,62 @@ private int luaCWrapperSmartImpl(
 )
 {
     import std.format : format;
-    import std.traits : Parameters, ReturnType, isInstanceOf;
-    import std.meta   : AliasSeq;
+    import std.traits : Parameters, ReturnType, isInstanceOf, ParameterDefaults;
+    import std.meta   : AliasSeq, staticIndexOf, Reverse;
 
     alias Params = Parameters!Func;
+    alias Defaults = AliasSeq!(ParameterDefaults!Func);
+
     static if(Params.length)
-        const ParamsLength =
+    {
+        const ParamsLength = 
             Params.length
             - (is(Params[0] == LuaState*) ? 1 : 0)
             - (is(Params[$-1] == LuaVariadic) ? 1 : 0);
+
+        const ParamsMinLength = staticIndexOf!(void, Defaults) == -1 ? 0 : (ParamsLength - staticIndexOf!(void, Reverse!Defaults));
+    }
     else
+    {
         const ParamsLength = 0;
+        const ParamsMinLength = 0;
+    }
 
     enum HasVariadic = Params.length > 0 && is(Params[$-1] == LuaVariadic);
+    enum HasDefault = ParamsMinLength != ParamsLength;
 
     Params params;
 
     const argsGiven = lua.top();
-    if(!HasVariadic && argsGiven != ParamsLength)
-        throw new LuaArgumentException("Expected exactly %s args, but was given %s.".format(ParamsLength, argsGiven));
-    else if(HasVariadic && argsGiven < ParamsLength)
-        throw new LuaArgumentException("Expected at least %s args, but was given %s.".format(ParamsLength, argsGiven));
+    if(!HasVariadic && (argsGiven < ParamsMinLength || argsGiven > ParamsLength))
+        static if (HasDefault)
+            throw new LuaArgumentException("Expected %s ~ %s args, but was given %s.".format(ParamsMinLength, ParamsLength, argsGiven));
+        else
+            throw new LuaArgumentException("Expected exactly %s args, but was given %s.".format(ParamsLength, argsGiven));
+    else if(HasVariadic && argsGiven < ParamsMinLength)
+        throw new LuaArgumentException("Expected at least %s args, but was given %s.".format(ParamsMinLength, argsGiven));
     
     static if(is(Params[0] == LuaState*))
     {
         params[0] = lua;
         static foreach(i; 0..ParamsLength)
+        if (i < argsGiven)
             params[i+1] = lua.get!(Params[i+1])(i+1);
     }
     else
     {
         static foreach(i; 0..ParamsLength)
+        if (i < argsGiven)
             params[i] = lua.get!(Params[i])(i+1);
     }
 
     static if(HasVariadic)
     foreach(i; 0..argsGiven-ParamsLength)
         params[$-1] ~= lua.get!LuaValue(cast(int)(i+ParamsLength+1));
+
+    static foreach(i; ParamsMinLength..ParamsLength)
+    if (i >= argsGiven)
+        params[i] = Defaults[i];
 
     alias RetT = ReturnType!Func;
 
@@ -825,4 +844,18 @@ unittest
 
     const msg = lua.doString(`err()`).collectExceptionMsg;
     assert(msg.canFind("stack traceback:"));
+}
+
+unittest
+{
+    auto lua = new LuaState(null);
+    lua.register!(
+        "defaultParams", (int a, int b = 1, int c = 2) { return a+b+c;}
+    )("lib");
+
+    lua.doString(`
+        assert(lib.defaultParams(1) == 4)
+        assert(lib.defaultParams(1, 2) == 5)
+        assert(lib.defaultParams(1, 3, 5) == 9)
+    `);
 }
