@@ -668,6 +668,9 @@ struct LuaState
         }
         else static if(isDynamicArray!T)
         {
+            if(this.isType!LuaNil(index))
+                return null;
+
             this.enforceType(LuaValue.Kind.table, index);
             T ret;
             ret.length = lua_objlen(this.handle, index);
@@ -684,6 +687,9 @@ struct LuaState
         }
         else static if(isAssociativeArray!T)
         {
+            if(this.isType!LuaNil(index))
+                return null;
+
             this.enforceType(LuaValue.Kind.table, index);
             T ret;
 
@@ -715,6 +721,9 @@ struct LuaState
         }
         else static if(isPointer!T || is(T == class))
         {
+            if(this.isType!LuaNil(index))
+                return null;
+
             this.enforceType(LuaValue.Kind.userData, index);
             return cast(T)lua_touserdata(this.handle, index);
         }

@@ -888,3 +888,18 @@ unittest
         assert(not pcall(lib.o1, 1, 2))
     `);
 }
+
+unittest
+{
+    class A{}
+    auto lua = new LuaState(null);
+    lua.register!(
+        "array", (int[] a) { assert(a is null); return 1; },
+        "class", (A a) { assert(a is null); return 1; }
+    )("test");
+
+    lua.doString(`
+        assert(test.array(nil) == 1)
+        assert(test.class(nil) == 1)
+    `);
+}
