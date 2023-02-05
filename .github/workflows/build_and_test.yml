@@ -10,8 +10,7 @@ jobs:
       fail-fast: true
       matrix:
         dc: [ldc-latest, dmd-latest]
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    if: ${{ !(matrix.os == "macos-latest" && matrix.dc == "dmd-latest") }}
+        os: [ubuntu-latest, windows-latest] # TODO: DMD doesn't work on MacOS and I cba to duplicate this just for Mac
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
