@@ -1,10 +1,15 @@
-on: [push, pull_request]
+on: workflow_dispatch
+# on: push
 
 name: Build LuaJIT
 
 jobs:
   windows:
     runs-on: windows-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        command: [static, ""]
     steps:
       - uses: actions/checkout@v2
         with:
@@ -14,7 +19,7 @@ jobs:
       - name: Compile LuaJIT
         run: |
           cd src
-          ./msvcbuild.bat static
+          ./msvcbuild.bat ${{ matrix.command }}
       - name: Archive built assets
         uses: actions/upload-artifact@v3
         with:
