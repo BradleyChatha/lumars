@@ -8,7 +8,7 @@ dependency "taggedalgebraic" version="~>0.11.22"
 configuration "lua51" {
 	targetType "library"
 	dflags "-L$PACKAGE_DIR/deps/linux64/lua51.a" platform="linux-x86_64"
-	dflags "-L$PACKAGE_DIR/deps/win64/lua51.lib" platform="windows-x86_64"
+	dflags "-L$PACKAGE_DIR/deps/win64/libluajit.a" platform="windows-x86_64"
 	dflags "-L$PACKAGE_DIR/deps/macamd/lua51.a" platform="osx-aarch64"
 	dflags "-L$PACKAGE_DIR/deps/macx64/lua51.a" platform="osx-x86_64"
 	versions "BindLua_Static" "LUA_51"
