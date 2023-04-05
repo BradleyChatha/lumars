@@ -32,6 +32,7 @@ Also if you're using this library for a project, consider adding it (or asking m
   - [Executing a string or file with a different _G table](#executing-a-string-or-file-with-a-different-_g-table)
   - [nogc strings](#nogc-strings)
   - [EmmyLua Annotations (IDE autocomplete)](#emmylua-annotations-ide-autocomplete)
+  - [Nullable support](#nullable-support)
 - [Projects](#projects)
 - [Contributing](#contributing)
 
@@ -591,6 +592,10 @@ void registerFuncs(LuaState* lua)
 ```
 
 Then simply `require("api.lua")` in your lua code, et voila (hopefully).
+
+## Nullable Support
+
+Lumars natively supports Phobos' `Nullable` type.
 
 # Projects
 
