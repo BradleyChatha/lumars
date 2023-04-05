@@ -2,6 +2,7 @@ module lumars.state;
 
 import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
+import std.typecons : Nullable;
 
 /// Used to represent LUA's `nil`.
 struct LuaNil {}
@@ -533,7 +534,7 @@ struct LuaState
     {
         import std.conv : to;
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isDelegate, isPointer, isFunction,
-                            PointerTarget, KeyType, ValueType, FieldNameTuple;
+                            PointerTarget, KeyType, ValueType, FieldNameTuple, TemplateOf, TemplateArgsOf;
 
         static if(is(T == typeof(null)) || is(T == LuaNil))
             lua_pushnil(this.handle);
@@ -584,6 +585,13 @@ struct LuaState
             lua_pushlightuserdata(this.handle, value);
             lua_pushcclosure(this.handle, &luaCWrapperSmart!(T, LuaFuncWrapperType.isFunction), 1);
         }
+        else static if(__traits(isSame, TemplateOf!T, Nullable))
+        {
+            if (value.isNull)
+                lua_pushnil(this.handle);
+            else
+                push!(TemplateArgsOf!T)(value.get());
+        }
         else static if(isPointer!T)
             lua_pushlightuserdata(this.handle, value);
         else static if(is(T == class))
@@ -624,7 +632,7 @@ struct LuaState
     T get(T)(int index)
     {
         import std.conv : to;
-        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType;
+        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf;
 
         static if(is(T == string))
         {
@@ -740,6 +748,12 @@ struct LuaState
                 case LuaValue.Kind.userData: return LuaValue(this.get!(void*)(index));
                 default: throw new LuaException("Don't know how to convert type into a LuaValue: "~this.type(index).to!string);
             }
+        }
+        else static if(__traits(isSame, TemplateOf!(T), Nullable))
+        {
+            if(this.isType!LuaNil(index))
+                return T.init;
+            return cast(T)get!(TemplateArgsOf!(T)[0])(index);
         }
         else static if(is(T == struct))
         {
@@ -929,6 +943,24 @@ unittest
 
     l.push([LuaValue(200), LuaValue("abc")]);
     assert(l.get!(LuaValue[])(-1) == [LuaValue(200), LuaValue("abc")]);
+    l.pop(1);
+
+    l.push(LuaNil());
+    assert(l.get!(Nullable!bool)(-1) == Nullable!(bool).init);
+    l.pop(1);
+
+    Nullable!bool nb;
+    l.push(nb);
+    assert(l.get!(Nullable!bool)(-1) == Nullable!(bool).init);
+    l.pop(1);
+
+    l.push(123);
+    assert(l.get!(Nullable!int)(-1) == 123);
+    l.pop(1);
+
+    Nullable!int ni = 234;
+    l.push(ni);
+    assert(l.get!(Nullable!int)(-1) == 234);
     l.pop(1);
 }
 
