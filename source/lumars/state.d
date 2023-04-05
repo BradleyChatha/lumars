@@ -628,6 +628,9 @@ struct LuaState
 
         static if(is(T == string))
         {
+            if(this.isType!LuaNil(index))
+                return null;
+
             this.enforceType(LuaValue.Kind.text, index);
             size_t len;
             auto ptr = lua_tolstring(this.handle, index, &len);
@@ -635,6 +638,9 @@ struct LuaState
         }
         else static if(is(T == const(char)[]))
         {
+            if(this.isType!LuaNil(index))
+                return null;
+
             this.enforceType(LuaValue.Kind.text, index);
             size_t len;
             auto ptr = lua_tolstring(this.handle, index, &len);
@@ -900,11 +906,15 @@ unittest
     l.push(null);
     assert(l.type(-1) == LuaValue.Kind.nil);
     assert(l.get!LuaValue(-1).kind == LuaValue.Kind.nil);
+    assert(l.get!string(-1) == null);
+    assert(l.get!(const(char)[])(-1) == null);
     l.pop(1);
 
     l.push(LuaNil());
     assert(l.type(-1) == LuaValue.Kind.nil);
     assert(l.get!LuaValue(-1).kind == LuaValue.Kind.nil);
+    assert(l.get!string(-1) == null);
+    assert(l.get!(const(char)[])(-1) == null);
     l.pop(1);
 
     l.push(false);
