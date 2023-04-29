@@ -480,7 +480,12 @@ private int luaCWrapperSmartImpl(
 
     static foreach(i; ParamsMinLength..ParamsLength)
     if (i >= argsGiven)
-        params[i] = Defaults[i];
+    {
+        static if(is(Params[0] == LuaState*))
+            params[i+1] = Defaults[i+1];
+        else
+            params[i] = Defaults[i];
+    }
 
     alias RetT = ReturnType!Func;
 
@@ -850,13 +855,17 @@ unittest
 {
     auto lua = new LuaState(null);
     lua.register!(
-        "defaultParams", (int a, int b = 1, int c = 2) { return a+b+c; }
+        "defaultParams", (int a, int b = 1, int c = 2) { return a+b+c; },
+        "defaultParams2", (LuaState*lua, int a, int b = 1, int c = 2) { return a+b+c; }
     )("lib");
 
     lua.doString(`
         assert(lib.defaultParams(1) == 4)
         assert(lib.defaultParams(1, 2) == 5)
         assert(lib.defaultParams(1, 3, 5) == 9)
+        assert(lib.defaultParams2(1) == 4)
+        assert(lib.defaultParams2(1, 2) == 5)
+        assert(lib.defaultParams2(1, 3, 5) == 9)
     `);
 }
 
