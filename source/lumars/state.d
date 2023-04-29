@@ -633,6 +633,7 @@ struct LuaState
     {
         import std.conv : to;
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf;
+        import std.typecons : isTuple;
 
         static if(is(T == string))
         {
@@ -761,32 +762,69 @@ struct LuaState
                 return T.init;
             return cast(T)get!(TemplateArgsOf!(T)[0])(index);
         }
-        else static if(is(T == struct))
+        else static if (isTuple!T)
         {
-            this.enforceType(LuaValue.Kind.table, index);
             T ret;
+            alias params = T.Types;
+            int idx = 0;
+            bool match = true;
 
-            this.push(null);
-            const tableIndex = index < 0 ? index - 1 : index;
-            While: while(this.next(tableIndex))
+            static foreach (i, p; params)
             {
-                const field = this.get!(const(char)[])(-2);
-
-                static foreach(member; __traits(allMembers, T))
+                if (match)
                 {
-                    if(field == member)
+                    idx = cast(int)(i - params.length);
+                    if (this.isType!(params[i])(idx))
                     {
-                        mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
-                        this.pop(1);
-                        continue While;
+                        ret[i] = this.get!(p)(idx);
+                    }
+                    else
+                    {
+                        match = false;
                     }
                 }
-
-                this.pop(1);
             }
-            return ret;
+
+            if (match)
+            {
+                return ret;
+            }
+            else
+            {
+                return getAsStruct!(T, T.fieldNames)(cast(int)-params.length);
+            }
+        }
+        else static if(is(T == struct))
+        {
+            return getAsStruct!(T, __traits(allMembers, T))(index);
         }
         else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
+    }
+
+    T getAsStruct(T, Names ...)(int index)
+    {
+        this.enforceType(LuaValue.Kind.table, index);
+        T ret;
+
+        this.push(null);
+        const tableIndex = index < 0 ? index - 1 : index;
+        While: while(this.next(tableIndex))
+        {
+            const field = this.get!(const(char)[])(-2);
+
+            static foreach(member; Names)
+            {
+                if(field == member)
+                {
+                    mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
+                    this.pop(1);
+                    continue While;
+                }
+            }
+
+            this.pop(1);
+        }
+        return ret; 
     }
 
     @nogc
