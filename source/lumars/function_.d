@@ -24,6 +24,7 @@ struct LuaVariadic
 }
 
 // (replacing with Tuple soon, not documenting)
+deprecated("Deprecated in favour of using std.typecons.Tuple")
 struct LuaMultiReturn(T...)
 {
     alias ValueTuple = T;
@@ -775,12 +776,14 @@ unittest
 
 unittest
 {
+    import std.typecons : tuple;
+
     auto lua = new LuaState(null);
     lua.register!(
         luaOverloads!(
             (int a) { assert(a == 1); return a; },
             (string a) { assert(a == "2"); return a; },
-            (int a, string b) { assert(a == 1); assert(b == "2"); return LuaMultiReturn!(int, string)(a, b); }
+            (int a, string b) { assert(a == 1); assert(b == "2"); return tuple(a, b); }
         )
     )("overloaded");
     lua.doString(`
@@ -794,9 +797,11 @@ unittest
 
 unittest
 {
-    static LuaMultiReturn!(int, string, bool) multiReturn()
+    import std.typecons : tuple;
+
+    static auto multiReturn()
     {
-        return typeof(return)(20, "40", true);
+        return tuple(20, "40", true);
     }
 
     auto lua = new LuaState(null);
@@ -887,13 +892,15 @@ unittest
 
 unittest
 {
+    import std.typecons : tuple;
+
     auto lua = new LuaState(null);
     lua.register!(
         "normal", (){ return 1; },
         "overloaded", luaOverloads!(
             (int a) { assert(a == 1); return a; },
             (string a) { assert(a == "2"); return a; },
-            (int a, string b) { assert(a == 1); assert(b == "2"); return LuaMultiReturn!(int, string)(a, b); }
+            (int a, string b) { assert(a == 1); assert(b == "2"); return tuple(a, b); }
         )
     )("lib");
 
