@@ -160,8 +160,20 @@ struct LuaBoundFunc(alias LuaFuncT, alias ReturnT, Params...)
      + ++/
     ReturnT opCall(Params params)
     {
+        import std.typecons : isTuple;
+
         static if(is(ReturnT == void))
             this.func.pcall!0(params);
+        else static if (isTuple!ReturnT)
+        {
+            auto results = this.func.pcall!(ReturnT.Types.length)(params);
+            foreach (r; results)
+            {
+                this.func.lua.push(r);
+            }
+            scope(exit) this.func.lua.pop(ReturnT.Types.length);
+            return this.func.lua.get!ReturnT(-1);
+        }
         else
         {
             auto result = this.func.pcall!1(params)[0];
@@ -427,6 +439,7 @@ private int luaCWrapperSmartImpl(
     import std.format : format;
     import std.traits : Parameters, ReturnType, isInstanceOf, ParameterDefaults;
     import std.meta   : AliasSeq, staticIndexOf, Reverse;
+    import std.typecons : isTuple;
 
     alias Params = Parameters!Func;
     alias Defaults = AliasSeq!(ParameterDefaults!Func);
@@ -516,6 +529,13 @@ private int luaCWrapperSmartImpl(
                 lua.push(value);
             return cast(int)multiRet.length;
         }
+        else static if(isTuple!RetT)
+        {
+            auto multiRet = dFunc(params);
+            static foreach(i; 0..multiRet.length)
+                lua.push(multiRet[i]);
+            return multiRet.length;
+        }
         else
         {
             lua.push(dFunc(params, context));
@@ -544,6 +564,13 @@ private int luaCWrapperSmartImpl(
                 lua.push(value);
             return cast(int)multiRet.length;
         }
+        else static if(isTuple!RetT)
+        {
+            auto multiRet = func(params);
+            static foreach(i; 0..multiRet.length)
+                lua.push(multiRet[i]);
+            return multiRet.length;
+        }
         else
         {
             lua.push(func(params));
@@ -570,6 +597,13 @@ private int luaCWrapperSmartImpl(
             foreach(value; multiRet)
                 lua.push(value);
             return cast(int)multiRet.length;
+        }
+        else static if(isTuple!RetT)
+        {
+            auto multiRet = Func(params);
+            static foreach(i; 0..multiRet.length)
+                lua.push(multiRet[i]);
+            return multiRet.length;
         }
         else
         {
@@ -790,6 +824,47 @@ unittest
         assert(s == "40")
         assert(b)
     `);
+}
+
+unittest
+{
+    import std.typecons : Tuple;
+    static Tuple!(int, string, bool) multiReturn()
+    {
+        return typeof(return)(20, "40", true);
+    }
+
+    auto lua = new LuaState(null);
+    lua.register!multiReturn("multiReturn");
+    lua.doString(`
+        local i, s, b = multiReturn()
+        assert(i == 20)
+        assert(s == "40")
+        assert(b)
+    `);
+
+    alias Employee = Tuple!(int, "ID", string, "Name", bool, "FullTime");
+
+    lua.doString(`
+        function employee1()
+            return 15305, "Domain", true
+        end
+
+        function employee2()
+            return { ID = 15605, Name = "Range", FullTime = false }
+        end
+    `);
+
+    auto f = lua.globalTable.get!LuaFunc("employee1").bind!(Employee);
+    auto g = lua.globalTable.get!LuaFunc("employee2").bind!(Employee);
+    auto employee1 = f();
+    auto employee2 = g();
+    assert(employee1.ID == 15305);
+    assert(employee1.Name == "Domain");
+    assert(employee1.FullTime);
+    assert(employee2.ID == 15605);
+    assert(employee2.Name == "Range");
+    assert(!employee2.FullTime);
 }
 
 unittest
