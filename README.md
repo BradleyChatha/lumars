@@ -33,6 +33,8 @@ Also if you're using this library for a project, consider adding it (or asking m
   - [nogc strings](#nogc-strings)
   - [EmmyLua Annotations (IDE autocomplete)](#emmylua-annotations-ide-autocomplete)
   - [Nullable support](#nullable-support)
+  - [Tuple support](#tuple-support)
+    - [Tuple parsing behaviour](#tuple-parsing-behaviour)
 - [Projects](#projects)
 - [Contributing](#contributing)
 
@@ -270,12 +272,14 @@ lua.doString(`
 
 ### Returning multiple values (statically)
 
-A way of returning multiple values in a statically typed way, is to use `LuaMultiReturn` as your return value:
+A way of returning multiple values in a statically typed way, is to use `std.typecons.Tuple` as your return value:
 
 ```d
-LuaMultiReturn!(int, string, bool) multiReturn()
+import std.typecons : tuple
+
+auto multiReturn()
 {
-    return typeof(return)(20, "40", true);
+    return tuple(20, "40", true);
 }
 
 auto lua = new LuaState(null);
@@ -596,6 +600,81 @@ Then simply `require("api.lua")` in your lua code, et voila (hopefully).
 ## Nullable Support
 
 Lumars natively supports Phobos' `Nullable` type.
+
+If the `Nullable` is null: A Lua `nil` is used.
+
+If the `Nullable` isn't null: The underlying value is used.
+
+Most of the code should transparently support `Nullable`.
+
+## Tuple Support
+
+Lumars natively supports Phobos' `Tuple` type.
+
+You can use this to easily return multiple values from a function in D.
+
+You can also use this to easily parse multiple Lua values into a single D value.
+
+Currently `Nullable` isn't supported within tuples very well.
+
+Currently partial parsing (i.e. the tuple expects 2 values but only 1 is available) of tuples isn't supported, and will generate an exception, outside of the special case described below.
+
+### Tuple Parsing behaviour
+
+Normally Lumars will try to parse the top `n` (where `n` is the number of values in the tuple) values from the stack into the tuple, and if that fails either due to type mismatches, incorrect number of values, etc. then an exception is generated.
+
+If:
+
+* Lumars fails to parse `n` values from the top of the stack into a Tuple
+
+* And the failure occurs for the 0th value
+
+* And the 0th value is a table
+
+* And the tuple has named fields (e.g. `Tuple!(int, "foo", int, "bar")`)
+
+* Then Lumars will attempt to parse the 0th value into the tuple as if it were a struct.
+
+```d
+import std.typecons : Tuple;
+
+Tuple!(int, string, bool) multiReturn()
+{
+    return typeof(return)(20, "40", true);
+}
+
+auto lua = new LuaState(null);
+lua.register!multiReturn("multiReturn");
+lua.doString(`
+    local i, s, b = multiReturn()
+    assert(i == 20)
+    assert(s == "40")
+    assert(b)
+`);
+
+alias Employee = Tuple!(int, "ID", string, "Name", bool, "FullTime");
+
+lua.doString(`
+    function employee1()
+        return 15305, "Domain", true
+    end
+
+    function employee2()
+        return { ID = 15605, Name = "Range", FullTime = false }
+    end
+`);
+
+auto f = lua.globalTable.get!LuaFunc("employee1").bind!(Employee);
+auto g = lua.globalTable.get!LuaFunc("employee2").bind!(Employee);
+auto employee1 = f();
+auto employee2 = g();
+assert(employee1.ID == 15305);
+assert(employee1.Name == "Domain");
+assert(employee1.FullTime);
+assert(employee2.ID == 15605);
+assert(employee2.Name == "Range");
+assert(!employee2.FullTime);
+```
 
 # Projects
 
