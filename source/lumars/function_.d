@@ -869,6 +869,24 @@ unittest
 
 unittest
 {
+    import std.exception : assertThrown;
+    import std.typecons  : Tuple;
+
+    alias Employee = Tuple!(int, "ID", string, "Name", bool, "FullTime");
+
+    auto lua = new LuaState(null);
+    lua.doString(`
+        function partialEmployee()
+            return 15305, "Domain"
+        end
+    `);
+
+    auto partialEmployee = lua.globalTable.get!LuaFunc("partialEmployee").bind!(Employee);
+    assertThrown!LuaTypeException(partialEmployee());
+}
+
+unittest
+{
     auto lua = new LuaState(null);
     lua.register!(
         "normal", (){ return 1; },

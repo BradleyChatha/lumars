@@ -369,36 +369,47 @@ struct LuaState
     @nogc
     bool isType(T)(int index) nothrow
     {
-        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType;
+        return this.type(index) == LuaState.luaValueKindFor!T;
+    }
+
+    @nogc
+    static LuaValue.Kind luaValueKindFor(T)() pure nothrow
+    {
+        import std.typecons : Nullable;
+        import std.traits   : isNumeric, isDynamicArray, isAssociativeArray, 
+                              isPointer, KeyType, ValueType,
+                              isInstanceOf, TemplateArgsOf;
 
         static if(is(T == string))
-            return this.type(index) == LuaValue.Kind.text;
+            return LuaValue.Kind.text;
         else static if(is(T == const(char)[]))
-            return this.type(index) == LuaValue.Kind.text;
+            return LuaValue.Kind.text;
         else static if(is(T : const(bool)))
-            return this.type(index) == LuaValue.Kind.boolean;
+            return LuaValue.Kind.boolean;
         else static if(isNumeric!T)
-            return this.type(index) == LuaValue.Kind.number;
+            return LuaValue.Kind.number;
         else static if(is(T == typeof(null)) || is(T == LuaNil))
-            return this.type(index) == LuaValue.Kind.nil;
+            return LuaValue.Kind.nil;
         else static if(is(T == LuaTableWeak))
-            return this.type(index) == LuaValue.Kind.table;
+            return LuaValue.Kind.table;
         else static if(is(T == LuaTable))
-            return this.type(index) == LuaValue.Kind.table;
+            return LuaValue.Kind.table;
         else static if(isDynamicArray!T)
-            return this.type(index) == LuaValue.Kind.table;
+            return LuaValue.Kind.table;
         else static if(isAssociativeArray!T)
-            return this.type(index) == LuaValue.Kind.table;
+            return LuaValue.Kind.table;
         else static if(is(T == LuaCFunc))
-            return this.type(index) == LuaValue.Kind.func;
+            return LuaValue.Kind.func;
         else static if(is(T == LuaFuncWeak))
-            return this.type(index) == LuaValue.Kind.func;
+            return LuaValue.Kind.func;
         else static if(is(T == LuaFunc))
-            return this.type(index) == LuaValue.Kind.func;
+            return LuaValue.Kind.func;
+        else static if(isInstanceOf!(Nullable, T))
+            return luaValueKindFor!(TemplateArgsOf!T[0])();
         else static if(isPointer!T || is(T == class))
-            return this.type(index) == LuaValue.Kind.userData;
+            return LuaValue.Kind.userData;
         else static if(is(T == struct))
-            return this.type(index) == LuaValue.Kind.table;
+            return LuaValue.Kind.table;
         else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
     }
 
@@ -632,6 +643,7 @@ struct LuaState
     T get(T)(int index)
     {
         import std.conv : to;
+        import std.format : format;
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf;
         import std.typecons : isTuple;
 
@@ -767,32 +779,49 @@ struct LuaState
             T ret;
             alias params = T.Types;
             int idx = 0;
-            bool match = true;
 
             static foreach (i, p; params)
             {
-                if (match)
+                idx = cast(int)(i - params.length);
+                if (this.isType!(params[i])(idx))
                 {
-                    idx = cast(int)(i - params.length);
-                    if (this.isType!(params[i])(idx))
+                    ret[i] = this.get!(p)(idx);
+                }
+                else
+                {
+                    const firstArgIndex = cast(int)(-params.length);
+                    static if(i == 0)
                     {
-                        ret[i] = this.get!(p)(idx);
+                        if(this.type(firstArgIndex) == LuaValue.Kind.table)
+                            return getAsStruct!(T, T.fieldNames)(firstArgIndex);
+
+                        throw new LuaTypeException(
+                            format!(
+                                "When parsing tuple %s, expected value %s to be %s, but it was %s. "
+                                ~" Attempted to parse 0th value as a struct instead, but 0th value is not a table."
+                            )(
+                                T.stringof,
+                                idx,
+                                LuaState.luaValueKindFor!(params[i]),
+                                this.type(firstArgIndex),
+                            )
+                        );
                     }
                     else
                     {
-                        match = false;
+                        throw new LuaTypeException(
+                            format!"When parsing tuple %s, expected value %s to be %s, but it was %s."(
+                                T.stringof,
+                                idx,
+                                LuaState.luaValueKindFor!(params[i]),
+                                this.type(firstArgIndex)
+                            )
+                        );
                     }
                 }
             }
 
-            if (match)
-            {
-                return ret;
-            }
-            else
-            {
-                return getAsStruct!(T, T.fieldNames)(cast(int)-params.length);
-            }
+            return ret;
         }
         else static if(is(T == struct))
         {
@@ -948,6 +977,10 @@ class LuaTypeException : LuaException
     mixin basicExceptionCtors;
 }
 class LuaArgumentException : LuaException
+{
+    mixin basicExceptionCtors;
+}
+class LuaStackException : LuaException
 {
     mixin basicExceptionCtors;
 }
