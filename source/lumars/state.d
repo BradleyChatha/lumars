@@ -108,7 +108,7 @@ struct LuaState
     {
         return this._G;
     }
-    
+
     @nogc
     lua_CFunction atPanic(lua_CFunction func) nothrow
     {
@@ -167,7 +167,7 @@ struct LuaState
     {
         return lua_lessthan(this.handle, index1, index2) != 0;
     }
-    
+
     @nogc
     bool rawEqual(int index1, int index2) nothrow
     {
@@ -376,7 +376,7 @@ struct LuaState
     static LuaValue.Kind luaValueKindFor(T)() pure nothrow
     {
         import std.typecons : Nullable;
-        import std.traits   : isNumeric, isDynamicArray, isAssociativeArray, 
+        import std.traits   : isNumeric, isDynamicArray, isAssociativeArray,
                               isPointer, KeyType, ValueType,
                               isInstanceOf, TemplateArgsOf;
 
@@ -644,7 +644,7 @@ struct LuaState
     {
         import std.conv : to;
         import std.format : format;
-        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf;
+        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf, FieldNameTuple;
         import std.typecons : isTuple;
 
         static if(is(T == string))
@@ -825,7 +825,7 @@ struct LuaState
         }
         else static if(is(T == struct))
         {
-            return getAsStruct!(T, __traits(allMembers, T))(index);
+            return getAsStruct!(T, FieldNameTuple!T)(index);
         }
         else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
     }
@@ -853,7 +853,7 @@ struct LuaState
 
             this.pop(1);
         }
-        return ret; 
+        return ret;
     }
 
     @nogc
@@ -890,7 +890,7 @@ struct LuaState
             case LUA_TFUNCTION: return LuaValue.Kind.func;
             case LUA_TLIGHTUSERDATA: return LuaValue.Kind.userData;
 
-            default: 
+            default:
                 return LuaValue.Kind.nil;
         }
     }
@@ -957,9 +957,9 @@ private void loadLuaIfNeeded()
     {
         const ret = loadLua();
         if(ret != luaSupport) {
-            if(ret == LuaSupport.noLibrary) 
+            if(ret == LuaSupport.noLibrary)
                 throw new LuaException("Lua library not found.");
-            else if(ret == LuaSupport.badLibrary) 
+            else if(ret == LuaSupport.badLibrary)
                 throw new LuaException("Lua library is corrupt or for a different platform.");
             else
                 throw new LuaException("Lua library is the wrong version, or some unknown error occured.");
@@ -1082,7 +1082,7 @@ unittest
     {
         string a;
     }
- 
+
     static struct A
     {
         string a;
