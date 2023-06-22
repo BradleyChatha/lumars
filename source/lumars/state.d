@@ -856,6 +856,41 @@ struct LuaState
         return ret;
     }
 
+    unittest
+    {
+        static struct MyStruct
+        {
+            int number;
+            string text;
+
+            int getNumber() const
+            {
+                return number;
+            }
+
+            string getText() const
+            {
+                return text;
+            }
+        }
+
+        auto lua = LuaState(null);
+        auto before = MyStruct(1, "foo");
+
+        lua.push(before);
+
+        auto table = lua.get!LuaTable(-1);
+        assert(table.get!int("number") == 1);
+        assert(table.get!(const(char)[])("text") == "foo");
+        assert(table.get!string("text") == "foo");
+
+        auto after = lua.get!MyStruct(-1);
+
+        assert(before == after);
+
+        lua.pop(1);
+    }
+
     @nogc
     bool next(int index) nothrow
     {
