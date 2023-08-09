@@ -264,7 +264,11 @@ struct LuaTablePseudo
     void pushElement(IndexT)(IndexT index)
     if(isNumeric!IndexT || is(IndexT == string))
     {
-        this.lua.push(index);
+        version(LUA_52) {
+            if (index == LUA_GLOBALSINDEX) {
+                lua_pushglobaltable(this.lua.handle);
+            } else this.lua.push(index);
+        } else this.lua.push(index);
         lua_gettable(this.lua.handle, this._index);
     }
 

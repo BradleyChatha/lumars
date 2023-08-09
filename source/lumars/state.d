@@ -4,6 +4,10 @@ import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
 import std.typecons : Nullable;
 
+version(LUA_52) {
+    enum LUA_GLOBALSINDEX = -10_002;
+}
+
 /// Used to represent LUA's `nil`.
 struct LuaNil {}
 
@@ -282,7 +286,13 @@ struct LuaState
         static foreach(i; 0..Args.length/2)
             reg[i] = luaL_Reg(Args[i*2].ptr, &luaCWrapperSmart!(Args[i*2+1]));
 
-        luaL_register(this.handle, libname.toStringz, reg.ptr);
+        version(LUA_52) {
+            lua_newtable(this.handle);
+            luaL_setfuncs(this.handle, reg.ptr, 0);
+            lua_setglobal(this.handle, libname.toStringz);
+        } else {
+            luaL_register(this.handle, libname.toStringz, reg.ptr);
+        }
     }
 
     @nogc
@@ -435,9 +445,13 @@ struct LuaState
         }
 
         table.push();
-        const fenvResult = lua_setfenv(this.handle, -2);
-        if(fenvResult == 0)
-            throw new LuaException("Failed to set function environment");
+        version(LUA_52) {
+            lua_setupvalue(this.handle, -2, 1);
+        } else {
+            const fenvResult = lua_setfenv(this.handle, -2);
+            if(fenvResult == 0)
+                throw new LuaException("Failed to set function environment");
+        }
 
         const callStatus = lua_pcall(this.handle, 0, 0, 0);
         if(callStatus != LuaStatus.ok)
@@ -470,9 +484,13 @@ struct LuaState
         }
 
         table.push();
-        const fenvResult = lua_setfenv(this.handle, -2);
-        if(fenvResult == 0)
-            throw new LuaException("Failed to set function environment");
+        version(LUA_52) {
+            lua_setupvalue(this.handle, -2, 1);
+        } else {
+            const fenvResult = lua_setfenv(this.handle, -2);
+            if(fenvResult == 0)
+                throw new LuaException("Failed to set function environment");
+        }
 
         const callStatus = lua_pcall(this.handle, 0, 0, 0);
         if(callStatus != LuaStatus.ok)
