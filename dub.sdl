@@ -5,6 +5,7 @@ copyright "Copyright © 2023, Bradley Chatha"
 license "MIT"
 dependency "bindbc-lua" version="~>0.5.0"
 dependency "taggedalgebraic" version="~>0.11.22"
+
 configuration "lua51" {
 	targetType "library"
 	dflags "-L$PACKAGE_DIR/deps/linux64/lua51.a" platform="linux-x86_64"
@@ -14,10 +15,16 @@ configuration "lua51" {
 	versions "BindLua_Static" "LUA_51"
     subConfiguration "bindbc-lua" "static"
 }
+
 configuration "lua51-dynamic" {
 	targetType "library"
 	copyFiles "$PACKAGE_DIR/deps/win64/lua51.dll" platform="windows-x86_64"
 	copyFiles "$PACKAGE_DIR/deps/macamd/liblua.5.1.dylib" platform="osx-aarch64"
 	copyFiles "$PACKAGE_DIR/deps/macx64/liblua.5.1.dylib" platform="osx-x86_64"
 	versions "LUA_51"
+}
+
+configuration "lua52-dynamic" {
+	targetType "library"
+	versions "LUA_52"
 }
