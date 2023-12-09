@@ -4,6 +4,9 @@ import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
 import std.typecons : Nullable;
 
+struct ShowInLua {}
+struct HideInLua {}
+
 /// Used to represent LUA's `nil`.
 struct LuaNil {}
 
@@ -534,7 +537,7 @@ struct LuaState
     {
         import std.conv : to;
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isDelegate, isPointer, isFunction,
-                            PointerTarget, KeyType, ValueType, FieldNameTuple, TemplateOf, TemplateArgsOf;
+                            PointerTarget, KeyType, ValueType, FieldNameTuple, TemplateOf, TemplateArgsOf, hasUDA;
 
         static if(is(T == typeof(null)) || is(T == LuaNil))
             lua_pushnil(this.handle);
@@ -602,9 +605,15 @@ struct LuaState
 
             static foreach(member; FieldNameTuple!T)
             {
-                this.push(member);
-                this.push(mixin("value."~member));
-                lua_settable(this.handle, -3);
+                static if (!hasUDA!(mixin("value."~member), HideInLua) && 
+                    (hasUDA!(mixin("value."~member), ShowInLua) || 
+                    __traits(getVisibility, mixin("value."~member)) == "public" || 
+                    __traits(getVisibility, mixin("value."~member)) == "export"))
+                {
+                    this.push(member);
+                    this.push(mixin("value."~member));
+                    lua_settable(this.handle, -3);
+                }
             }
         }
         else static assert(false, "Don't know how to push type: "~T.stringof);
@@ -632,7 +641,7 @@ struct LuaState
     T get(T)(int index)
     {
         import std.conv : to;
-        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf;
+        import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isPointer, KeyType, ValueType, TemplateOf, TemplateArgsOf, FieldNameTuple;
 
         static if(is(T == string))
         {
@@ -772,7 +781,7 @@ struct LuaState
             {
                 const field = this.get!(const(char)[])(-2);
 
-                static foreach(member; __traits(allMembers, T))
+                static foreach(member; FieldNameTuple!T)
                 {
                     if(field == member)
                     {
@@ -1017,12 +1026,23 @@ unittest
         string a;
         B[] b;
         C[string] c;
+        @HideInLua int d;
+        private int e;
+        @ShowInLua private int f;
+        export int g;
+
+        public int E() { return e; }
+        public int F() { return f; }
     }
 
     auto a = A(
         "bc",
         [B("c")],
-        ["c": C("123")]
+        ["c": C("123")],
+        123,
+        456,
+        789,
+        1024
     );
 
     auto l = LuaState(null);
@@ -1034,6 +1054,18 @@ unittest
     assert(luaa.b == [B("c")]);
     assert(luaa.c.length == 1);
     assert(luaa.c["c"] == C("123"));
+    assert(a.d == 123);
+    assert(a.E == 456);
+    assert(a.F == 789);
+    assert(luaa.d != a.d);
+    assert(luaa.e != a.E);
+    assert(luaa.f == a.F);
+    assert(luaa.g == 1024);
+
+    l.globalTable["a"] = a;
+    l.doString("assert(a.d == nil)");
+    l.doString("assert(a.e == nil)");
+    l.doString("assert(a.f == 789)");
 }
 
 unittest
