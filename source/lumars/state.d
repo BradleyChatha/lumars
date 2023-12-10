@@ -3,6 +3,51 @@ module lumars.state;
 import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
 import std.typecons : Nullable;
+import std.traits : hasUDA, FieldNameTuple;
+import std.meta : AliasSeq;
+
+struct ShowInLua {}
+struct HideInLua {}
+
+template isVisibleField(alias T)
+{
+    enum isVisibleField = !hasUDA!(T, HideInLua) && (
+        hasUDA!(T, ShowInLua) || 
+        __traits(getVisibility, T) == "public" ||  
+        __traits(getVisibility, T) == "export"
+    );
+}
+
+template VisibleFieldNameTuple(T)
+{
+    alias VisibleFieldNameTuple = AliasSeq!();
+    static foreach (member; FieldNameTuple!T)
+        static if (__traits(compiles, mixin("T."~member)) && isVisibleField!(mixin("T."~member)))
+            VisibleFieldNameTuple = AliasSeq!(VisibleFieldNameTuple, member);
+}
+
+unittest
+{
+    struct S
+    {
+        int a;
+        @HideInLua int b;
+        private int c;
+        @ShowInLua private int d;
+        export int e;
+        protected int f;
+    }
+
+    static assert(isVisibleField!(S.a));
+    static assert(!isVisibleField!(S.b));
+    static assert(!isVisibleField!(S.c));
+    static assert(isVisibleField!(S.d));
+    static assert(isVisibleField!(S.e));
+    static assert(!isVisibleField!(S.f));
+
+    alias vfnt = VisibleFieldNameTuple!S;
+    static assert(vfnt == AliasSeq!("a", "d", "e"));
+}
 
 /// Used to represent LUA's `nil`.
 struct LuaNil {}
@@ -611,7 +656,7 @@ struct LuaState
         {
             lua_newtable(this.handle);
 
-            static foreach(member; FieldNameTuple!T)
+            static foreach(member; VisibleFieldNameTuple!T)
             {
                 this.push(member);
                 this.push(mixin("value."~member));
@@ -825,7 +870,7 @@ struct LuaState
         }
         else static if(is(T == struct))
         {
-            return getAsStruct!(T, FieldNameTuple!T)(index);
+            return getAsStruct!(T, VisibleFieldNameTuple!T)(index);
         }
         else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
     }
@@ -1123,12 +1168,23 @@ unittest
         string a;
         B[] b;
         C[string] c;
+        @HideInLua int d;
+        private int e;
+        @ShowInLua private int f;
+        export int g;
+
+        public int E() { return e; }
+        public int F() { return f; }
     }
 
     auto a = A(
         "bc",
         [B("c")],
-        ["c": C("123")]
+        ["c": C("123")],
+        123,
+        456,
+        789,
+        1024
     );
 
     auto l = LuaState(null);
@@ -1140,6 +1196,18 @@ unittest
     assert(luaa.b == [B("c")]);
     assert(luaa.c.length == 1);
     assert(luaa.c["c"] == C("123"));
+    assert(a.d == 123);
+    assert(a.E == 456);
+    assert(a.F == 789);
+    assert(luaa.d != a.d);
+    assert(luaa.e != a.E);
+    assert(luaa.f == a.F);
+    assert(luaa.g == 1024);
+
+    l.globalTable["a"] = a;
+    l.doString("assert(a.d == nil)");
+    l.doString("assert(a.e == nil)");
+    l.doString("assert(a.f == 789)");
 }
 
 unittest
