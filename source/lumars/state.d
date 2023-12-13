@@ -2,19 +2,112 @@ module lumars.state;
 
 import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
-import std.typecons : Nullable;
+import std.typecons : Nullable, isTuple;
 import std.traits : hasUDA, FieldNameTuple;
 import std.meta : AliasSeq;
 
 struct ShowInLua {}
-struct HideInLua {}
+struct HideFromLua {}
 
-template isVisibleField(alias T)
+template FieldIndex(T, string fieldName)
 {
-    enum isVisibleField = !hasUDA!(T, HideInLua) && (
-        hasUDA!(T, ShowInLua) || 
-        __traits(getVisibility, T) == "public" ||  
-        __traits(getVisibility, T) == "export"
+    static if (isTuple!T)
+        enum FieldIndex = TupleFieldIndex!(T, fieldName, 0);
+    else
+        enum FieldIndex = StructFieldIndex!(T, fieldName, 0);
+}
+
+template TupleFieldIndex(T, string fieldName, int i)
+{
+    static if (T.Types.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+        enum TupleFieldIndex = -1;
+    }
+    else static if (T.fieldNames[i] == fieldName)
+    {
+        enum TupleFieldIndex = i;
+    }
+    else
+    {
+        enum TupleFieldIndex = TupleFieldIndex!(T, fieldName, i + 1);
+    }
+}
+
+template StructFieldIndex(T, string fieldName, int i)
+{
+    static if (T.tupleof.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+        enum StructFieldIndex = -1;
+    }
+    else static if (__traits(identifier, T.tupleof[i]) == fieldName)
+    {
+        enum StructFieldIndex = i;
+    }
+    else
+    {
+        enum StructFieldIndex = StructFieldIndex!(T, fieldName, i + 1);
+    }
+}
+
+template FieldType(T, string fieldName, int i = 0)
+{
+    static if (isTuple!T)
+        alias FieldType = TupleFieldType!(T, fieldName, 0);
+    else 
+        alias FieldType = StructFieldType!(T, fieldName, 0);
+}
+
+template TupleFieldType(T, string fieldName, int i)
+{
+    static if (T.Types.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+    }
+    else static if (T.fieldNames[i] == fieldName)
+    {
+        alias TupleFieldType = T.Types[i];
+    }
+    else
+    {
+        alias TupleFieldType = TupleFieldType!(T, fieldName, i + 1);
+    }
+}
+
+template StructFieldType(T, string fieldName, int i)
+{
+    static if (T.tupleof.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+    }
+    else static if (__traits(identifier, T.tupleof[i]) == fieldName)
+    {
+        alias StructFieldType = typeof(T.tupleof[i]);
+    }
+    else
+    {
+        alias StructFieldType = StructFieldType!(T, fieldName, i + 1);
+    }
+}
+
+private auto getFieldValue(string fieldName, T)(T obj)
+{
+    return obj.tupleof[FieldIndex!(T, fieldName)];
+}
+
+private void setFieldValue(string fieldName, T, U)(ref T obj, U value)
+{
+    obj.tupleof[FieldIndex!(T, fieldName)] = value;
+}
+
+template isVisibleField(T, string fieldName)
+{
+    enum i = FieldIndex!(T, fieldName);
+    enum isVisibleField = !hasUDA!(T.tupleof[i], HideFromLua) && (
+        hasUDA!(T.tupleof[i], ShowInLua) || 
+        __traits(getVisibility, T.tupleof[i]) == "public" ||  
+        __traits(getVisibility, T.tupleof[i]) == "export"
     );
 }
 
@@ -22,7 +115,7 @@ template VisibleFieldNameTuple(T)
 {
     alias VisibleFieldNameTuple = AliasSeq!();
     static foreach (member; FieldNameTuple!T)
-        static if (__traits(compiles, mixin("T."~member)) && isVisibleField!(mixin("T."~member)))
+        static if (isVisibleField!(T, member))
             VisibleFieldNameTuple = AliasSeq!(VisibleFieldNameTuple, member);
 }
 
@@ -31,19 +124,19 @@ unittest
     struct S
     {
         int a;
-        @HideInLua int b;
+        @HideFromLua int b;
         private int c;
         @ShowInLua private int d;
         export int e;
         protected int f;
     }
 
-    static assert(isVisibleField!(S.a));
-    static assert(!isVisibleField!(S.b));
-    static assert(!isVisibleField!(S.c));
-    static assert(isVisibleField!(S.d));
-    static assert(isVisibleField!(S.e));
-    static assert(!isVisibleField!(S.f));
+    static assert(isVisibleField!(S, "a"));
+    static assert(!isVisibleField!(S, "b"));
+    static assert(!isVisibleField!(S, "c"));
+    static assert(isVisibleField!(S, "d"));
+    static assert(isVisibleField!(S, "e"));
+    static assert(!isVisibleField!(S, "f"));
 
     alias vfnt = VisibleFieldNameTuple!S;
     static assert(vfnt == AliasSeq!("a", "d", "e"));
@@ -659,7 +752,7 @@ struct LuaState
             static foreach(member; VisibleFieldNameTuple!T)
             {
                 this.push(member);
-                this.push(mixin("value."~member));
+                this.push(getFieldValue!member(value));
                 lua_settable(this.handle, -3);
             }
         }
@@ -890,7 +983,8 @@ struct LuaState
             {
                 if(field == member)
                 {
-                    mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
+                    setFieldValue!(member)(ret, get!(FieldType!(T, member))(-1));
+                    //mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
                     this.pop(1);
                     continue While;
                 }
@@ -1168,7 +1262,7 @@ unittest
         string a;
         B[] b;
         C[string] c;
-        @HideInLua int d;
+        @HideFromLua int d;
         private int e;
         @ShowInLua private int f;
         export int g;
