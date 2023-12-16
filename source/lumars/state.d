@@ -8,46 +8,28 @@ import std.meta : AliasSeq;
 
 struct ShowInLua {}
 struct HideFromLua {}
+struct AsTable {}
+struct AsUserData {}
 
 template FieldIndex(T, string fieldName)
 {
-    static if (isTuple!T)
-        enum FieldIndex = TupleFieldIndex!(T, fieldName, 0);
-    else
-        enum FieldIndex = StructFieldIndex!(T, fieldName, 0);
+    enum FieldIndex = fieldIndexImpl!(T, fieldName, 0);
 }
 
-template TupleFieldIndex(T, string fieldName, int i)
-{
-    static if (T.Types.length <= i)
-    {
-        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
-        enum TupleFieldIndex = -1;
-    }
-    else static if (T.fieldNames[i] == fieldName)
-    {
-        enum TupleFieldIndex = i;
-    }
-    else
-    {
-        enum TupleFieldIndex = TupleFieldIndex!(T, fieldName, i + 1);
-    }
-}
-
-template StructFieldIndex(T, string fieldName, int i)
+private template fieldIndexImpl(T, string fieldName, int i)
 {
     static if (T.tupleof.length <= i)
     {
         static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
-        enum StructFieldIndex = -1;
+        enum fieldIndexImpl = -1;
     }
     else static if (__traits(identifier, T.tupleof[i]) == fieldName)
     {
-        enum StructFieldIndex = i;
+        enum fieldIndexImpl = i;
     }
     else
     {
-        enum StructFieldIndex = StructFieldIndex!(T, fieldName, i + 1);
+        enum fieldIndexImpl = fieldIndexImpl!(T, fieldName, i + 1);
     }
 }
 
@@ -93,12 +75,18 @@ template StructFieldType(T, string fieldName, int i)
 
 private auto getFieldValue(string fieldName, T)(T obj)
 {
-    return obj.tupleof[FieldIndex!(T, fieldName)];
+    static if (isTuple!T)
+        return mixin("obj." ~ fieldName);
+    else
+        return obj.tupleof[FieldIndex!(T, fieldName)];
 }
 
 private void setFieldValue(string fieldName, T, U)(ref T obj, U value)
 {
-    obj.tupleof[FieldIndex!(T, fieldName)] = value;
+    static if (isTuple!T)
+        mixin("obj." ~ fieldName ~ " = value;");
+    else
+        obj.tupleof[FieldIndex!(T, fieldName)] = value;
 }
 
 template isVisibleField(T, string fieldName)
@@ -114,9 +102,16 @@ template isVisibleField(T, string fieldName)
 template VisibleFieldNameTuple(T)
 {
     alias VisibleFieldNameTuple = AliasSeq!();
-    static foreach (member; FieldNameTuple!T)
-        static if (isVisibleField!(T, member))
-            VisibleFieldNameTuple = AliasSeq!(VisibleFieldNameTuple, member);
+    static if (isTuple!T)
+    {
+        VisibleFieldNameTuple = T.fieldNames;
+    }
+    else
+    {
+        static foreach (member; FieldNameTuple!T)
+            static if (isVisibleField!(T, member))
+                VisibleFieldNameTuple = AliasSeq!(VisibleFieldNameTuple, member);
+    }
 }
 
 unittest
@@ -140,6 +135,17 @@ unittest
 
     alias vfnt = VisibleFieldNameTuple!S;
     static assert(vfnt == AliasSeq!("a", "d", "e"));
+
+    import std.typecons : Tuple;
+
+    alias T = Tuple!(int, "a", int, "b");
+    T t;
+
+    static assert(isVisibleField!(S, "a"));
+    static assert(!isVisibleField!(S, "b"));
+
+    alias vfnt2 = VisibleFieldNameTuple!T;
+    static assert(vfnt2 == AliasSeq!("a", "b"));
 }
 
 /// Used to represent LUA's `nil`.
@@ -921,7 +927,14 @@ struct LuaState
             static foreach (i, p; params)
             {
                 idx = cast(int)(i - params.length);
-                if (this.isType!(params[i])(idx))
+                if (params.length != lua_gettop(this.handle))
+                {
+                    static if(i == 0)
+                    {
+                        return getAsStruct!(T, T.fieldNames)(index); 
+                    }
+                }
+                else if (this.isType!(params[i])(idx))
                 {
                     ret[i] = this.get!(p)(idx);
                 }
@@ -1282,6 +1295,19 @@ unittest
     );
 
     auto l = LuaState(null);
+
+    import std.typecons : Tuple;
+
+    alias T = Tuple!(int, "a", string, "b");
+    T t;
+    t.a = 123;
+    t.b = "abc";
+    l.push(t);
+
+    auto luab = l.get!T(-1);
+    assert(luab.a == 123);
+    assert(luab.b == "abc");
+
     l.push(a);
 
     auto luaa = l.get!A(-1);
@@ -1302,6 +1328,12 @@ unittest
     l.doString("assert(a.d == nil)");
     l.doString("assert(a.e == nil)");
     l.doString("assert(a.f == 789)");
+    l.doString("a.f = 135");
+    
+    auto b = l.globalTable.get!A("a");
+    assert(b.F == 135);
+
+
 }
 
 unittest
