@@ -8,8 +8,6 @@ import std.meta : AliasSeq;
 
 struct ShowInLua {}
 struct HideFromLua {}
-struct AsTable {}
-struct AsUserData {}
 
 template FieldIndex(T, string fieldName)
 {
@@ -997,7 +995,6 @@ struct LuaState
                 if(field == member)
                 {
                     setFieldValue!(member)(ret, get!(FieldType!(T, member))(-1));
-                    //mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
                     this.pop(1);
                     continue While;
                 }
