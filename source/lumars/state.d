@@ -2,7 +2,149 @@ module lumars.state;
 
 import bindbc.lua, taggedalgebraic, lumars;
 import taggedalgebraic : visit;
-import std.typecons : Nullable;
+import std.typecons : Nullable, isTuple;
+import std.traits : hasUDA, FieldNameTuple;
+import std.meta : AliasSeq;
+
+struct ShowInLua {}
+struct HideFromLua {}
+
+template FieldIndex(T, string fieldName)
+{
+    enum FieldIndex = fieldIndexImpl!(T, fieldName, 0);
+}
+
+private template fieldIndexImpl(T, string fieldName, int i)
+{
+    static if (T.tupleof.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+        enum fieldIndexImpl = -1;
+    }
+    else static if (__traits(identifier, T.tupleof[i]) == fieldName)
+    {
+        enum fieldIndexImpl = i;
+    }
+    else
+    {
+        enum fieldIndexImpl = fieldIndexImpl!(T, fieldName, i + 1);
+    }
+}
+
+template FieldType(T, string fieldName, int i = 0)
+{
+    static if (isTuple!T)
+        alias FieldType = TupleFieldType!(T, fieldName, 0);
+    else 
+        alias FieldType = StructFieldType!(T, fieldName, 0);
+}
+
+template TupleFieldType(T, string fieldName, int i)
+{
+    static if (T.Types.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+    }
+    else static if (T.fieldNames[i] == fieldName)
+    {
+        alias TupleFieldType = T.Types[i];
+    }
+    else
+    {
+        alias TupleFieldType = TupleFieldType!(T, fieldName, i + 1);
+    }
+}
+
+template StructFieldType(T, string fieldName, int i)
+{
+    static if (T.tupleof.length <= i)
+    {
+        static assert(false, "The given field \"" ~ fieldName ~ "\" doesn't exist in the type \"" ~ T.stringof ~ "\"");
+    }
+    else static if (__traits(identifier, T.tupleof[i]) == fieldName)
+    {
+        alias StructFieldType = typeof(T.tupleof[i]);
+    }
+    else
+    {
+        alias StructFieldType = StructFieldType!(T, fieldName, i + 1);
+    }
+}
+
+private auto getFieldValue(string fieldName, T)(T obj)
+{
+    static if (isTuple!T)
+        return mixin("obj." ~ fieldName);
+    else
+        return obj.tupleof[FieldIndex!(T, fieldName)];
+}
+
+private void setFieldValue(string fieldName, T, U)(ref T obj, U value)
+{
+    static if (isTuple!T)
+        mixin("obj." ~ fieldName ~ " = value;");
+    else
+        obj.tupleof[FieldIndex!(T, fieldName)] = value;
+}
+
+template isVisibleField(T, string fieldName)
+{
+    enum i = FieldIndex!(T, fieldName);
+    enum isVisibleField = !hasUDA!(T.tupleof[i], HideFromLua) && (
+        hasUDA!(T.tupleof[i], ShowInLua) || 
+        __traits(getVisibility, T.tupleof[i]) == "public" ||  
+        __traits(getVisibility, T.tupleof[i]) == "export"
+    );
+}
+
+template VisibleFieldNameTuple(T)
+{
+    alias VisibleFieldNameTuple = AliasSeq!();
+    static if (isTuple!T)
+    {
+        VisibleFieldNameTuple = T.fieldNames;
+    }
+    else
+    {
+        static foreach (member; FieldNameTuple!T)
+            static if (isVisibleField!(T, member))
+                VisibleFieldNameTuple = AliasSeq!(VisibleFieldNameTuple, member);
+    }
+}
+
+unittest
+{
+    struct S
+    {
+        int a;
+        @HideFromLua int b;
+        private int c;
+        @ShowInLua private int d;
+        export int e;
+        protected int f;
+    }
+
+    static assert(isVisibleField!(S, "a"));
+    static assert(!isVisibleField!(S, "b"));
+    static assert(!isVisibleField!(S, "c"));
+    static assert(isVisibleField!(S, "d"));
+    static assert(isVisibleField!(S, "e"));
+    static assert(!isVisibleField!(S, "f"));
+
+    alias vfnt = VisibleFieldNameTuple!S;
+    static assert(vfnt == AliasSeq!("a", "d", "e"));
+
+    import std.typecons : Tuple;
+
+    alias T = Tuple!(int, "a", int, "b");
+    T t;
+
+    static assert(isVisibleField!(S, "a"));
+    static assert(!isVisibleField!(S, "b"));
+
+    alias vfnt2 = VisibleFieldNameTuple!T;
+    static assert(vfnt2 == AliasSeq!("a", "b"));
+}
 
 /// Used to represent LUA's `nil`.
 struct LuaNil {}
@@ -611,10 +753,10 @@ struct LuaState
         {
             lua_newtable(this.handle);
 
-            static foreach(member; FieldNameTuple!T)
+            static foreach(member; VisibleFieldNameTuple!T)
             {
                 this.push(member);
-                this.push(mixin("value."~member));
+                this.push(getFieldValue!member(value));
                 lua_settable(this.handle, -3);
             }
         }
@@ -783,7 +925,14 @@ struct LuaState
             static foreach (i, p; params)
             {
                 idx = cast(int)(i - params.length);
-                if (this.isType!(params[i])(idx))
+                if (params.length != lua_gettop(this.handle))
+                {
+                    static if(i == 0)
+                    {
+                        return getAsStruct!(T, T.fieldNames)(index); 
+                    }
+                }
+                else if (this.isType!(params[i])(idx))
                 {
                     ret[i] = this.get!(p)(idx);
                 }
@@ -825,7 +974,7 @@ struct LuaState
         }
         else static if(is(T == struct))
         {
-            return getAsStruct!(T, FieldNameTuple!T)(index);
+            return getAsStruct!(T, VisibleFieldNameTuple!T)(index);
         }
         else static assert(false, "Don't know how to convert any LUA values into type: "~T.stringof);
     }
@@ -845,7 +994,7 @@ struct LuaState
             {
                 if(field == member)
                 {
-                    mixin("ret."~member~"= this.get!(typeof(ret."~member~"))(-1);");
+                    setFieldValue!(member)(ret, get!(FieldType!(T, member))(-1));
                     this.pop(1);
                     continue While;
                 }
@@ -1123,15 +1272,39 @@ unittest
         string a;
         B[] b;
         C[string] c;
+        @HideFromLua int d;
+        private int e;
+        @ShowInLua private int f;
+        export int g;
+
+        public int E() { return e; }
+        public int F() { return f; }
     }
 
     auto a = A(
         "bc",
         [B("c")],
-        ["c": C("123")]
+        ["c": C("123")],
+        123,
+        456,
+        789,
+        1024
     );
 
     auto l = LuaState(null);
+
+    import std.typecons : Tuple;
+
+    alias T = Tuple!(int, "a", string, "b");
+    T t;
+    t.a = 123;
+    t.b = "abc";
+    l.push(t);
+
+    auto luab = l.get!T(-1);
+    assert(luab.a == 123);
+    assert(luab.b == "abc");
+
     l.push(a);
 
     auto luaa = l.get!A(-1);
@@ -1140,6 +1313,24 @@ unittest
     assert(luaa.b == [B("c")]);
     assert(luaa.c.length == 1);
     assert(luaa.c["c"] == C("123"));
+    assert(a.d == 123);
+    assert(a.E == 456);
+    assert(a.F == 789);
+    assert(luaa.d != a.d);
+    assert(luaa.e != a.E);
+    assert(luaa.f == a.F);
+    assert(luaa.g == 1024);
+
+    l.globalTable["a"] = a;
+    l.doString("assert(a.d == nil)");
+    l.doString("assert(a.e == nil)");
+    l.doString("assert(a.f == 789)");
+    l.doString("a.f = 135");
+    
+    auto b = l.globalTable.get!A("a");
+    assert(b.F == 135);
+
+
 }
 
 unittest
