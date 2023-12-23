@@ -688,6 +688,15 @@ struct LuaState
         import std.conv : to;
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isDelegate, isPointer, isFunction,
                             PointerTarget, KeyType, ValueType, FieldNameTuple, TemplateOf, TemplateArgsOf;
+        
+        static if (__traits(compiles, value = null))
+        {
+            if (value is null)
+            {
+                lua_pushnil(this.handle);
+                return;
+            }
+        }
 
         static if(is(T == typeof(null)) || is(T == LuaNil))
             lua_pushnil(this.handle);
@@ -1038,6 +1047,39 @@ struct LuaState
         assert(before == after);
 
         lua.pop(1);
+    }
+
+    unittest
+    {
+        string str = null;
+        auto lua = LuaState(null);
+
+        lua.globalTable["a"] = str;
+        lua.doString("assert(a == nil)");
+
+        lua.globalTable["b"] = "";
+        lua.doString("assert(b == '')");
+
+        class C {}
+        C c = null;
+        lua.globalTable["c"] = c;
+        lua.doString("assert(c == nil)");
+
+        string[int] d;
+        lua.globalTable["d"] = d;
+        lua.doString("assert(d == nil)");
+
+        int[] e;
+        lua.globalTable["e"] = e;
+        lua.doString("assert(e == nil)");
+
+        int function() f;
+        lua.globalTable["f"] = f;
+        lua.doString("assert(f == nil)");
+
+        int delegate() g;
+        lua.globalTable["g"] = g;
+        lua.doString("assert(g == nil)");
     }
 
     @nogc
