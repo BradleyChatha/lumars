@@ -689,7 +689,7 @@ struct LuaState
         import std.traits : isNumeric, isDynamicArray, isAssociativeArray, isDelegate, isPointer, isFunction,
                             PointerTarget, KeyType, ValueType, FieldNameTuple, TemplateOf, TemplateArgsOf;
         
-        static if (__traits(compiles, value = null))
+        static if (__traits(compiles, value is null))
         {
             if (value is null)
             {
